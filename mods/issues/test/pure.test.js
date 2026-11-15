@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { opener, trusted, href, host, mentions, mentionsOn, closeLabel, brief, sendArgs } from "../pure.js";
+import { opener, trusted, href, host, mentions, mentionsOn, closeLabel, brief, sendArgs, branchName, branchError, worktreesRoot, worktreePath, asText } from "../pure.js";
 
 const URL = "https://github.com/o/r/issues/1", PNG = "C:/Users/x/data/issues/images/a.png";
 
@@ -89,4 +89,46 @@ test("brief keeps quotes and flattens newlines and control characters in the tit
 test("sendArgs gives hc the message as one argument, never read as a flag", () => {
   assert.deepEqual(sendArgs("t7", "hello\nworld"), ["send", "t7", "hello\nworld"]);
   assert.deepEqual(sendArgs("m/t7", "--force"), ["send", "m/t7", " --force"]);
+});
+test("branchName is issue-<n>-<slug> in lowercase ASCII with runs of other characters as one dash", () => {
+  assert.equal(branchName(12, "Crash on start-up!"), "issue-12-crash-on-start-up");
+  assert.equal(branchName(5, "  [Bug]:  Fix   #7 (again)  "), "issue-5-bug-fix-7-again");
+  assert.equal(branchName(8, "Añadir botón: más"), "issue-8-anadir-boton-mas");
+});
+
+test("branchName gives issue-<n> when the title has nothing ASCII to keep", () => {
+  for (const title of ["", "   ", "日本語のタイトル", "!!!", null, undefined]) assert.equal(branchName(3, title), "issue-3", String(title));
+});
+
+test("branchName caps the branch at 50 characters, cutting at a dash when it can", () => {
+  const long = branchName(123, "Support for configuring the retry policy of the background synchronisation job");
+  assert.equal(long, "issue-123-support-for-configuring-the-retry-policy");
+  assert.ok(long.length <= 50);
+  assert.equal(branchName(1, "a".repeat(80)), "issue-1-" + "a".repeat(42));
+  assert.equal(branchName(1, "x".repeat(41) + " yyyy zzz"), "issue-1-" + "x".repeat(41));
+});
+
+test("branchError accepts what git accepts in letters, digits, dots, dashes, underscores and slashes", () => {
+  for (const name of ["issue-12-fix", "feature/a_b.c", "v1.2", "a", "me/issue-1/x"]) assert.equal(branchError(name), null, name);
+});
+
+test("branchError rejects other characters and the shapes git refuses", () => {
+  for (const name of ["", "has space", "a:b", "a~b", "a^b", "a?b", "a*b", "a[b", "a\\b", "a@{b", "ñ", "-x", "--force", "/x", "x/", "x.", "x.lock", "a/b.lock", "a..b", "a//b", ".hidden", "a/.hidden", "a/b.lock/c"])
+    assert.notEqual(branchError(name), null, name);
+});
+
+test("worktreesRoot reads settings.worktrees_root and defaults to ~/.herdr/worktrees", () => {
+  assert.equal(worktreesRoot('{"settings":{"worktrees_root":"~/wt"}}'), "~/wt");
+  for (const raw of ['{"settings":{"worktrees_root":""}}', '{"settings":{"worktrees_root":7}}', '{"settings":{}}', "not json", null]) assert.equal(worktreesRoot(raw), "~/.herdr/worktrees", String(raw));
+});
+
+test("worktreePath puts the checkout at <root>/<owner>-<repo>/<branch with slashes as dashes>, with ~ as home", () => {
+  assert.equal(worktreePath("~/.herdr/worktrees", "/home/u", "o/r", "issue-4-x"), "/home/u/.herdr/worktrees/o-r/issue-4-x");
+  assert.equal(worktreePath("/srv/wt/", "/home/u", "o/r", "me/issue-4"), "/srv/wt/o-r/me-issue-4");
+  assert.equal(worktreePath("~", "/home/u", "o/r", "b"), "/home/u/o-r/b");
+});
+
+test("asText keeps a leading dash from being read as a flag", () => {
+  assert.equal(asText("-x"), " -x");
+  assert.equal(asText("go"), "go");
 });

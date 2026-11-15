@@ -1,9 +1,10 @@
 import { div, svg, image } from "gpui-kit";
-import { v_flex, h_flex, TextView, TextareaState, Textarea } from "gpui-base";
-import { exec, hc, theme, openOverlay, closeOverlay, notify, setShared, window, agents } from "herdr";
+import { v_flex, h_flex, TextView, TextareaState, Textarea, InputState, Input } from "gpui-base";
+import { exec, hc, theme, openOverlay, closeOverlay, notify, setShared, window, agents, knownAgents, home, run } from "herdr";
+import * as fs from "fs/promises";
 import { icons, icon, avatarPath, loadAvatar } from "./icons.js";
 import { blocks, picture, failed, loadPicture, blocked, allow } from "./pictures.js";
-import { opener, host, closeLabel, brief, sendArgs } from "./pure.js";
+import { opener, host, closeLabel, brief, sendArgs, asText, branchName, branchError, worktreePath } from "./pure.js";
 
 export const FIELDS = "number,title,body,author,state,stateReason,labels,assignees,createdAt,updatedAt,comments,url";
 const DETAIL = `${FIELDS},milestone,closedByPullRequestsReferences,reactionGroups`;
@@ -98,6 +99,7 @@ const NO_AGENT = "No agent in the focused terminal";
 
 // The overlay that previews a message and sends it to a terminal's agent on Send: `{ terminal, message }`.
 export const sendToAgent = (send) => openOverlay({ mod: "issues", kind: "dialog", modal: true, width: 560, height: 420, props: { send } });
+const startAgent = (start) => openOverlay({ mod: "issues", kind: "dialog", modal: true, width: 560, height: 540, props: { start } });
 
 // GitHub's Copy link, with the reference and number beside it: a popup of the panel's mod. With a
 // terminal (null: none followed yet), it also offers Send to agent.
@@ -116,13 +118,13 @@ export function labelChip(l, t) {
     .text_size(12).font_semibold().text_color(light ? `#${l.color}` : t.foreground).child(l.name);
 }
 
-// One issue in a dialog: { repo, number, on, data?, me?, terminal } from the panel. With
+// One issue in a dialog: { repo, number, on, data?, me?, terminal, folder, root } from the panel. With
 // data (the panel's cached copy) it shows at once; the full issue and its
 // timeline load behind it. Links to other issues and pull requests open here
 // too, with Back to return.
 export class Viewer {
-  constructor({ repo, number, on, data, me, terminal }, overlay, cx) {
-    this.repo = repo; this.number = number; this.on = on; this.me = me; this.terminal = terminal; this.overlay = overlay;
+  constructor({ repo, number, on, data, me, terminal, folder, root }, overlay, cx) {
+    this.repo = repo; this.number = number; this.on = on; this.me = me; this.terminal = terminal; this.overlay = overlay; this.folder = folder; this.root = root;
     this.history = []; this.cache = {}; this.timelines = {}; this.labels = {}; this.tab = "write";
     if (data) this.cache[`${repo}#${number}`] = data;
     this.reply = TextareaState.new({ placeholder: "Use Markdown to format your comment" });
@@ -456,6 +458,9 @@ export class Viewer {
       .when(Boolean(i), (e) => e.child(this.button("issue-copy", "Copy", t, () => copyMenu({ repo: this.repo, number: i.number, title: i.title, url: i.url }), { glyph: "copy" })))
       .when(Boolean(i), (e) => e.child(this.button("issue-send", "Send to agent", t, () => sendToAgent({ terminal: this.terminal, message: brief(i, this.repo) }),
         { enabled: Boolean(agentOf(this.terminal)), hint: agentOf(this.terminal) ? null : NO_AGENT })))
+      .when(Boolean(i), (e) => e.child(this.button("issue-start", "Start agent", t,
+        () => startAgent({ repo: this.repo, folder: this.folder, root: this.root, number: i.number, title: i.title, message: brief(i, this.repo) }),
+        { enabled: !this.on && Boolean(this.folder), hint: this.on ? "Not available on a remote machine" : this.folder ? null : "No folder to make the worktree from" })))
       .when(Boolean(i), (e) => e.child(this.button("issue-github", "Open on GitHub", t, () => openUrl(i.url), { glyph: "external" })))
       .child(this.button("issue-close", "", t, () => closeOverlay(this.overlay), { glyph: "close" }));
     if (!i) return v_flex().id("issue").size_full().bg(t.background).text_color(t.foreground).text_size(14).px(32).pt(16).gap(20)
@@ -527,5 +532,89 @@ export class Sender {
       .child(h_flex().gap(8).items_center().justify_end()
         .child(this.button("send-cancel", "Cancel", t, () => closeOverlay(this.overlay)))
         .child(this.button("send-confirm", this.busy ? "Sending…" : "Send", t, (_e, cx) => this.send(cx), { primary: true, enabled: ready })));
+  }
+}
+
+// A new branch in a new worktree, opened with a program and, for an agent, the message as its first
+// prompt (Herdr sends it once the agent is up; a terminal is never sent one). Props `start`:
+// { repo, folder, root, number, title, message }, `folder` being a checkout of `repo`. Ctrl+Enter starts too.
+export class Starter extends Sender {
+  constructor({ repo, folder, root, number, title, message }, overlay, cx) {
+    super({ terminal: null, message }, overlay);
+    this.repo = repo; this.folder = folder; this.root = root; this.launch = "terminal"; this.agents = [];
+    this.text.set_auto_grow(4, 8);
+    this.branch = InputState.new({ value: branchName(number, title) });
+    this.branch.on("change", (_e, cx) => { this.error = null; cx.notify(); });
+    this.branch.on("submit", (_e, cx) => this.send(cx));
+    cx.spawn(async (cx) => {
+      this.agents = (await knownAgents().catch(() => [])).filter((a) => a.installed);
+      if (this.agents.length && this.launch === "terminal") this.launch = this.agents[0].key;
+      cx.notify();
+    });
+  }
+
+  // Each step stops at the first failure with git's or gh's own message; nothing is forced or deleted.
+  async create(branch) {
+    const cwd = this.folder, call = async (program, args) => {
+      const r = await exec(program, args, { cwd });
+      if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || `${program} ${args[0]} failed`);
+      return r.stdout;
+    };
+    const view = JSON.parse(await call("gh", ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"])), main = view.defaultBranchRef?.name;
+    if (view.nameWithOwner?.toLowerCase() !== this.repo.toLowerCase()) throw new Error(`${cwd} is not a checkout of ${this.repo}.`);
+    if (!main) throw new Error("The repository has no default branch.");
+    const path = worktreePath(this.root, home(), this.repo, branch);
+    const known = await exec("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd });
+    if (known.code === 0) throw new Error("That branch already exists. Choose another name.");
+    if (known.code !== 1) throw new Error(known.stderr.trim() || "Could not check the existing branches.");
+    if (await fs.stat(path).then(() => true, () => false)) throw new Error(`${path} already exists.`);
+    await call("git", ["fetch", "--no-tags", "--", "origin", main]);
+    await call("git", ["worktree", "add", "-b", branch, "--", path, `origin/${main}`]);
+    this.path = path;
+  }
+
+  open() {
+    const agent = this.agents.find((a) => a.key === this.launch), message = this.text.value().trim();
+    try { run("space.new", { folder: this.path, machine: "", ...(agent ? { argv: agent.run, ...(message ? { task: asText(message) } : {}) } : {}) }); }
+    catch (e) { throw new Error(`Worktree created at ${this.path}. Could not open it: ${e?.message ?? e}`); }
+  }
+
+  // Once the worktree exists, a retry only opens it again.
+  send(cx) {
+    const branch = this.branch.value().trim(), bad = this.path ? null : branchError(branch);
+    if (this.busy) return;
+    if (bad) { this.error = bad; cx.notify(); return; }
+    this.busy = true; this.error = null; cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        if (!this.path) await this.create(branch);
+        this.open();
+        notify({ title: "Worktree opened", body: this.path, level: "success", timeout: 2500 });
+        closeOverlay(this.overlay);
+      } catch (e) { this.error = String(e?.message ?? e); }
+      finally { this.busy = false; cx.notify(); }
+    });
+  }
+
+  render() {
+    const t = theme(), branch = this.branch.value().trim(), bad = this.path ? null : branchError(branch), agent = this.agents.some((a) => a.key === this.launch);
+    const label = (text) => div().text_size(11).font_semibold().text_color(t.dim).child(text);
+    return v_flex().id("start").size_full().min_h(0).p(20).gap(10).bg(t.background).text_color(t.foreground).text_size(13)
+      .child(div().text_size(16).font_semibold().child("Start agent"))
+      .child(div().text_color(t.muted).child(`A new branch from the default branch of ${this.repo}, in its own worktree`))
+      .child(label("Branch"))
+      .child(div().id("start-branch").h(32).px(10).flex().items_center().rounded(6).border_1().border_color(bad && branch ? t.ansi1 : t.border).cursor_text()
+        .child(Input.new(this.branch).h_full().text_size(13).text_color(t.foreground)))
+      .child(div().text_size(11).text_color(bad && branch ? t.ansi1 : t.muted).truncate().child(bad && branch ? bad : this.path ?? worktreePath(this.root, home(), this.repo, branch)))
+      .child(label("Open with"))
+      .child(h_flex().flex_wrap().gap(6)
+        .children([{ key: "terminal", name: "Terminal" }, ...this.agents].map((c) => this.button(`start-${c.key}`, c.name, t, (_e, cx) => { this.launch = c.key; cx.notify(); }, { primary: c.key === this.launch, enabled: !this.busy }))))
+      .child(label(agent ? "Message for the agent" : "Message (a terminal is not sent one)"))
+      .child(div().id("start-message").flex_1().min_h(0).overflow_y_scrollbar().px(12).py(10).rounded(6).border_1().border_color(t.border).cursor_text()
+        .child(Textarea.new(this.text).w_full().text_size(13).text_color(agent ? t.foreground : t.dim)))
+      .child(div().text_size(12).text_color(t.ansi1).child(this.error ?? ""))
+      .child(h_flex().gap(8).items_center().justify_end()
+        .child(this.button("start-cancel", "Cancel", t, () => closeOverlay(this.overlay)))
+        .child(this.button("start-confirm", this.busy ? "Starting…" : this.path ? "Open" : "Start", t, (_e, cx) => this.send(cx), { primary: true, enabled: !this.busy && !bad })));
   }
 }

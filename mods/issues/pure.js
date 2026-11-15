@@ -52,4 +52,42 @@ export const brief = ({ number, title, url }, repo) =>
   `Please work on ${repo}#${number}: ${String(title ?? "").replace(/[\p{Cc}\s]+/gu, " ").trim()}\n${url}\nRead it with: gh issue view ${number} -R ${repo} --comments`;
 
 // What `hc` is asked to type into a terminal; a leading dash would otherwise read as one of its flags.
-export const sendArgs = (address, message) => ["send", address, message.startsWith("-") ? ` ${message}` : message];
+export const sendArgs = (address, message) => ["send", address, asText(message)];
+
+// The same guard for a message handed to a program that starts an agent.
+export const asText = (message) => (message.startsWith("-") ? ` ${message}` : message);
+
+const BRANCH_MAX = 50;
+
+// The branch for an issue: issue-<n>-<slug of the title>, ASCII only (accents dropped, other scripts
+// left out), cut at a dash when it has to be shortened.
+export function branchName(number, title) {
+  const head = `issue-${number}`, room = BRANCH_MAX - head.length - 1;
+  let slug = String(title ?? "").normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (slug.length > room) {
+    const cut = slug.slice(0, room), dash = cut.lastIndexOf("-");
+    slug = (slug[room] === "-" || dash < 1 ? cut : cut.slice(0, dash)).replace(/-$/, "");
+  }
+  return slug ? `${head}-${slug}` : head;
+}
+
+// Why a branch name can't be used, or null: the characters the form allows, minus what git refuses in them.
+export function branchError(name) {
+  if (!name) return "Enter a branch name.";
+  if (!/^[\w./-]+$/.test(name)) return "Use letters, digits, dots, dashes, underscores and slashes.";
+  if (/^[-/]|[/.]$|\.\.|\/\/|(^|\/)\.|\.lock(\/|$)/.test(name)) return "Git does not accept that branch name.";
+  return null;
+}
+
+// Where new worktrees go: mod.json's `settings.worktrees_root`, else Herdr's own folder.
+export function worktreesRoot(raw) {
+  try {
+    const root = JSON.parse(raw ?? "{}").settings?.worktrees_root;
+    if (typeof root === "string" && root.trim()) return root.trim();
+  } catch { /* an unreadable mod.json gives the default */ }
+  return "~/.herdr/worktrees";
+}
+
+// The folder of a branch's worktree, laid out as Branch PR's: <root>/<owner>-<repo>/<name>.
+export const worktreePath = (root, home, repo, branch) =>
+  `${root.replace(/^~(?=\/|$)/, home).replace(/\/+$/, "")}/${repo.replace("/", "-")}/${branch.replace(/\//g, "-")}`;

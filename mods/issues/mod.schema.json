@@ -35,6 +35,12 @@
           "description": "Read the focused terminal every 10 seconds for #123 and links to the repository's issues, and list them under \"In this terminal\". Off, the terminal is never read.",
           "type": "boolean",
           "default": true
+        },
+        "worktrees_root": {
+          "title": "Worktrees folder",
+          "description": "Where Start agent puts the worktree of an issue, as <folder>/<owner>-<repo>/<branch>. A leading ~ is your home folder. Use the same folder as Branch PR to keep both mods' worktrees together.",
+          "type": "string",
+          "default": "~/.herdr/worktrees"
         }
       }
     }

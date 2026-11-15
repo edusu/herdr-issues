@@ -2,9 +2,9 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, focused, exec, hc, run, layout, theme, openOverlay, closeOverlay, notify, props, appHome, shared, setShared, readTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { Viewer, Sender, FIELDS, copyMenu, agentOf, agentName, sendToAgent } from "./viewer.js";
+import { Viewer, Sender, Starter, FIELDS, copyMenu, agentOf, agentName, sendToAgent } from "./viewer.js";
 import { icons, icon } from "./icons.js";
-import { mentions, mentionsOn } from "./pure.js";
+import { mentions, mentionsOn, worktreesRoot } from "./pure.js";
 
 // Where the focused pane is, as the Changes panel finds it. A focused mod pane
 // (this one, as a split) has no folder of its own: it keeps the last one.
@@ -72,9 +72,10 @@ async function save(repo, store) {
 // { button: true }); or one issue, the sort menu or the copy menu, as an overlay of the panel.
 export default class Issues extends View {
   init(_props, cx) {
-    const { issue, overlay, sortMenu, copyMenu: copying, send, button } = props() ?? {};
+    const { issue, overlay, sortMenu, copyMenu: copying, send, start, button } = props() ?? {};
     if (issue) { this.viewer = new Viewer(issue, overlay, cx); return; }
     if (send) { this.sender = new Sender(send, overlay); return; }
+    if (start) { this.starter = new Starter(start, overlay, cx); return; }
     if (sortMenu) { this.menu = overlay; return; }
     if (copying) { this.copying = { ...copying, overlay }; return; }
     if (button) {
@@ -98,6 +99,7 @@ export default class Issues extends View {
     cx.timer.every(SYNC, (cx) => { if (!hidden()) this.refresh(cx); });
     // Off with mod.json's settings.mentions: false (Better Config); saving mod.json reloads the mod.
     readTextFile(`${appHome()}/mods/issues/mod.json`).catch(() => null).then((raw) => {
+      this.root = worktreesRoot(raw);
       if (!(this.mentions = mentionsOn(raw))) return;
       cx.timer.every(SCAN, (cx) => { if (!hidden()) this.scan(cx); });
     });
@@ -273,7 +275,7 @@ export default class Issues extends View {
   // The dialog gets the issue in full when the list has it, so it shows at once.
   open(number) {
     const data = this.issues().find((i) => i.number === number) ?? null;
-    openOverlay({ mod: "issues", kind: "dialog", width: 0.86, height: 0.9, props: { issue: { repo: this.repo, number, on: this.repoOn ?? null, data, me: this.me, terminal: this.follow() ?? null } } });
+    openOverlay({ mod: "issues", kind: "dialog", width: 0.86, height: 0.9, props: { issue: { repo: this.repo, number, on: this.repoOn ?? null, data, me: this.me, terminal: this.follow() ?? null, folder: this.where().cwd ?? null, root: this.root ?? worktreesRoot(null) } } });
   }
 
   shown() {
@@ -328,6 +330,7 @@ export default class Issues extends View {
   render(cx) {
     if (this.viewer) return this.viewer.render(cx);
     if (this.sender) return this.sender.render(cx);
+    if (this.starter) return this.starter.render(cx);
     const t = theme();
     if (this.menu) return this.sortMenu(t);
     if (this.copying) return this.copyMenu(t);
