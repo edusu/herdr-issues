@@ -45,3 +45,11 @@ export function mentionsOn(raw) {
 
 // What the confirmation row says before an issue is closed; reason is gh's: "completed" or "not planned".
 export const closeLabel = (reason, comment) => `Close as ${reason}${comment ? " with comment" : ""}`;
+
+// The message to hand an agent: the issue's reference, link and how to read it. The body is left out:
+// it is untrusted and can be long, and the agent can fetch it.
+export const brief = ({ number, title, url }, repo) =>
+  `Please work on ${repo}#${number}: ${String(title ?? "").replace(/[\p{Cc}\s]+/gu, " ").trim()}\n${url}\nRead it with: gh issue view ${number} -R ${repo} --comments`;
+
+// What `hc` is asked to type into a terminal; a leading dash would otherwise read as one of its flags.
+export const sendArgs = (address, message) => ["send", address, message.startsWith("-") ? ` ${message}` : message];

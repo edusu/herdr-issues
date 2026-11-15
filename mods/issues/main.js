@@ -2,7 +2,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, focused, exec, hc, run, layout, theme, openOverlay, closeOverlay, notify, props, appHome, shared, setShared, readTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { Viewer, FIELDS, copyMenu } from "./viewer.js";
+import { Viewer, Sender, FIELDS, copyMenu, agentOf, agentName, sendToAgent } from "./viewer.js";
 import { icons, icon } from "./icons.js";
 import { mentions, mentionsOn } from "./pure.js";
 
@@ -72,8 +72,9 @@ async function save(repo, store) {
 // { button: true }); or one issue, the sort menu or the copy menu, as an overlay of the panel.
 export default class Issues extends View {
   init(_props, cx) {
-    const { issue, overlay, sortMenu, copyMenu: copying, button } = props() ?? {};
+    const { issue, overlay, sortMenu, copyMenu: copying, send, button } = props() ?? {};
     if (issue) { this.viewer = new Viewer(issue, overlay, cx); return; }
+    if (send) { this.sender = new Sender(send, overlay); return; }
     if (sortMenu) { this.menu = overlay; return; }
     if (copying) { this.copying = { ...copying, overlay }; return; }
     if (button) {
@@ -115,7 +116,10 @@ export default class Issues extends View {
         .child(div().size(14).when(this.icons, (e) => e.child(svg(icon("issue")).size(14)))).child("Issues"));
   }
 
-  where() { return (this.last = location(this.last)); }
+  where() { this.follow(); return (this.last = location(this.last)); }
+
+  // The terminal the panel follows; a focused mod pane has none, so the last one stays.
+  follow() { return (this.terminal = focused()?.terminal ?? this.terminal); }
 
   context() { return JSON.stringify([this.where(), focused()?.space]); }
 
@@ -233,7 +237,7 @@ export default class Issues extends View {
   // The focused terminal's screen and recent history, for the issues it mentions.
   // A focused mod pane has no terminal: the last one stays.
   scan(cx) {
-    const terminal = (this.terminal = focused()?.terminal ?? this.terminal), repo = this.repo, store = this.stores[repo];
+    const terminal = this.follow(), repo = this.repo, store = this.stores[repo];
     if (!this.mentions || this.scanning || !terminal || !store) return;
     // A remote terminal (machine/t1) isn't read: reading it every few seconds, and the
     // gh lookups that follow, made typing in it lag.
@@ -269,7 +273,7 @@ export default class Issues extends View {
   // The dialog gets the issue in full when the list has it, so it shows at once.
   open(number) {
     const data = this.issues().find((i) => i.number === number) ?? null;
-    openOverlay({ mod: "issues", kind: "dialog", width: 0.86, height: 0.9, props: { issue: { repo: this.repo, number, on: this.repoOn ?? null, data, me: this.me } } });
+    openOverlay({ mod: "issues", kind: "dialog", width: 0.86, height: 0.9, props: { issue: { repo: this.repo, number, on: this.repoOn ?? null, data, me: this.me, terminal: this.follow() ?? null } } });
   }
 
   shown() {
@@ -283,7 +287,7 @@ export default class Issues extends View {
     const closed = i.state && i.state !== "OPEN";
     return h_flex().id(`${where}-${i.number}`).flex_none().px(10).py(6).gap(8).items_start().rounded(7).cursor_pointer()
       .hover((s) => s.bg(t.hover)).on_click(() => this.open(i.number))
-      .on_mouse_down("right", () => copyMenu({ repo: this.repo, number: i.number, title: i.title, url: i.url }, "pointer"))
+      .on_mouse_down("right", () => copyMenu({ repo: this.repo, number: i.number, title: i.title, url: i.url, terminal: this.follow() ?? null }, "pointer"))
       .child(div().flex_none().w(40).text_color(closed ? t.ansi5 : t.dim).child(`#${i.number}`))
       .child(div().flex_1().min_w(0).text_color(closed && where !== "issue" ? t.muted : t.foreground).child(i.title));
   }
@@ -308,17 +312,22 @@ export default class Issues extends View {
   }
 
   copyMenu(t) {
-    const { url, ref, number, title, overlay } = this.copying;
+    const { url, ref, number, title, overlay, send } = this.copying, agent = send && agentOf(send.terminal);
     const items = [["Copy link", url], ["Copy reference", ref], ["Copy number", number], ["Copy number and title", title]].filter(([, text]) => text);
     return v_flex().id("issues-copy").size_full().p(6).gap(1).bg(t.popover).text_color(t.foreground).text_size(12)
       .children(items.map(([label, text], n) => v_flex().id(`copy-${n}`).px(8).py(6).rounded(6).cursor_pointer().hover((e) => e.bg(t.hover))
         .on_click((_e, cx) => { cx.write_to_clipboard(text); notify({ title: "Copied", body: text, level: "success", timeout: 2500 }); closeOverlay(overlay); })
         .child(div().font_semibold().child(label))
-        .child(div().text_size(11).text_color(t.muted).truncate().child(text))));
+        .child(div().text_size(11).text_color(t.muted).truncate().child(text))))
+      .when(Boolean(send), (e) => e.child(v_flex().id("copy-send").px(8).py(6).rounded(6)
+        .when(Boolean(agent), (s) => s.cursor_pointer().hover((h) => h.bg(t.hover)).on_click(() => { closeOverlay(overlay); sendToAgent(send); }))
+        .child(div().font_semibold().text_color(agent ? t.foreground : t.dim).child("Send to agent"))
+        .child(div().text_size(11).text_color(t.muted).truncate().child(agent ? `To ${agentName(agent)}` : "No agent in the focused terminal"))));
   }
 
   render(cx) {
     if (this.viewer) return this.viewer.render(cx);
+    if (this.sender) return this.sender.render(cx);
     const t = theme();
     if (this.menu) return this.sortMenu(t);
     if (this.copying) return this.copyMenu(t);

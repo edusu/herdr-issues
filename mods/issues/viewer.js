@@ -1,9 +1,9 @@
 import { div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextView, TextareaState, Textarea } from "gpui-base";
-import { exec, theme, openOverlay, closeOverlay, setShared, window } from "herdr";
+import { exec, hc, theme, openOverlay, closeOverlay, notify, setShared, window, agents } from "herdr";
 import { icons, icon, avatarPath, loadAvatar } from "./icons.js";
 import { blocks, picture, failed, loadPicture, blocked, allow } from "./pictures.js";
-import { opener, host, closeLabel } from "./pure.js";
+import { opener, host, closeLabel, brief, sendArgs } from "./pure.js";
 
 export const FIELDS = "number,title,body,author,state,stateReason,labels,assignees,createdAt,updatedAt,comments,url";
 const DETAIL = `${FIELDS},milestone,closedByPullRequestsReferences,reactionGroups`;
@@ -91,10 +91,21 @@ function timeline(raw) {
   return items;
 }
 
-// GitHub's Copy link, with the reference and number beside it: a popup of the panel's mod.
-export function copyMenu({ repo, number, title, url }, at) {
-  openOverlay({ mod: "issues", kind: "popup", width: 300, height: 222, ...(at ? { at } : {}),
-    props: { copyMenu: { url: url ?? `https://github.com/${repo}/issues/${number}`, ref: `${repo}#${number}`, number: `#${number}`, title: title ? `#${number} ${title}` : null } } });
+// The agent running in a terminal, if any. Only an agent: anything else would run the message as shell input.
+export const agentOf = (terminal) => (terminal && agents().find((a) => a.address === terminal)) || null;
+export const agentName = (a) => a.tab_name || a.title || a.address;
+const NO_AGENT = "No agent in the focused terminal";
+
+// The overlay that previews a message and sends it to a terminal's agent on Send: `{ terminal, message }`.
+export const sendToAgent = (send) => openOverlay({ mod: "issues", kind: "dialog", modal: true, width: 560, height: 420, props: { send } });
+
+// GitHub's Copy link, with the reference and number beside it: a popup of the panel's mod. With a
+// terminal (null: none followed yet), it also offers Send to agent.
+export function copyMenu({ repo, number, title, url, terminal }, at) {
+  url ??= `https://github.com/${repo}/issues/${number}`;
+  const send = terminal === undefined ? null : { terminal, message: brief({ number, title, url }, repo) };
+  openOverlay({ mod: "issues", kind: "popup", width: 300, height: send ? 272 : 222, ...(at ? { at } : {}),
+    props: { copyMenu: { url, ref: `${repo}#${number}`, number: `#${number}`, title: title ? `#${number} ${title}` : null, send } } });
 }
 
 // A label as GitHub tints it: its color faint behind, its color as text unless too dark to read.
@@ -105,13 +116,13 @@ export function labelChip(l, t) {
     .text_size(12).font_semibold().text_color(light ? `#${l.color}` : t.foreground).child(l.name);
 }
 
-// One issue in a dialog: { repo, number, on, data?, me? } from the panel. With
+// One issue in a dialog: { repo, number, on, data?, me?, terminal } from the panel. With
 // data (the panel's cached copy) it shows at once; the full issue and its
 // timeline load behind it. Links to other issues and pull requests open here
 // too, with Back to return.
 export class Viewer {
-  constructor({ repo, number, on, data, me }, overlay, cx) {
-    this.repo = repo; this.number = number; this.on = on; this.me = me; this.overlay = overlay;
+  constructor({ repo, number, on, data, me, terminal }, overlay, cx) {
+    this.repo = repo; this.number = number; this.on = on; this.me = me; this.terminal = terminal; this.overlay = overlay;
     this.history = []; this.cache = {}; this.timelines = {}; this.labels = {}; this.tab = "write";
     if (data) this.cache[`${repo}#${number}`] = data;
     this.reply = TextareaState.new({ placeholder: "Use Markdown to format your comment" });
@@ -238,11 +249,12 @@ export class Viewer {
 
   glyph(name, size, color) { return div().size(size).flex_none().when(this.icons, (e) => e.child(svg(icon(name)).size(size).text_color(color))); }
 
-  button(id, label, t, onClick, { primary = false, enabled = true, glyph = null, tint = null } = {}) {
+  button(id, label, t, onClick, { primary = false, enabled = true, glyph = null, tint = null, hint = null } = {}) {
     const solid = primary && enabled;
     return h_flex().id(id).h(32).px(12).gap(6).flex_none().items_center().justify_center().rounded(6).text_size(13).font_medium()
       .bg(solid ? GITHUB.open : t.raised).border_1().border_color(solid ? GITHUB.open : t.border).text_color(solid ? "#ffffff" : enabled ? t.foreground : t.dim)
       .when(enabled, (e) => e.cursor_pointer().hover((s) => s.bg(solid ? "#29903b" : t.hover)).on_click(onClick))
+      .when(Boolean(hint), (e) => e.tooltip(hint))
       .when(Boolean(glyph), (e) => e.child(this.glyph(glyph, 14, tint ?? (solid ? "#ffffff" : t.muted))))
       .when(label !== "", (e) => e.child(label));
   }
@@ -442,6 +454,8 @@ export class Viewer {
         .child(svg("mods/workspace-chrome/spinner.svg").size(12).text_color(t.working).spin(900)).child(this.busy ?? "Refreshing")))
       .when(Boolean(i) && !this.loading && !this.busy, (e) => e.child(this.button("issue-refresh", "Refresh", t, (_e, cx) => { this.load(cx); cx.notify(); }, { glyph: "refresh" })))
       .when(Boolean(i), (e) => e.child(this.button("issue-copy", "Copy", t, () => copyMenu({ repo: this.repo, number: i.number, title: i.title, url: i.url }), { glyph: "copy" })))
+      .when(Boolean(i), (e) => e.child(this.button("issue-send", "Send to agent", t, () => sendToAgent({ terminal: this.terminal, message: brief(i, this.repo) }),
+        { enabled: Boolean(agentOf(this.terminal)), hint: agentOf(this.terminal) ? null : NO_AGENT })))
       .when(Boolean(i), (e) => e.child(this.button("issue-github", "Open on GitHub", t, () => openUrl(i.url), { glyph: "external" })))
       .child(this.button("issue-close", "", t, () => closeOverlay(this.overlay), { glyph: "close" }));
     if (!i) return v_flex().id("issue").size_full().bg(t.background).text_color(t.foreground).text_size(14).px(32).pt(16).gap(20)
@@ -471,5 +485,47 @@ export class Viewer {
           .when(!pr, (e) => e.child(div().flex_none().h(28)).child(this.composer(i, t, cx)))
           .child(div().flex_none().h(24)))
         .child(this.sidebar(i, t, cx)));
+  }
+}
+
+// The message to an agent, editable; nothing is typed into the terminal before Send. Props `send`: { terminal, message }.
+export class Sender {
+  button(...args) { return Viewer.prototype.button.apply(this, args); }
+
+  constructor({ terminal, message }, overlay) {
+    this.terminal = terminal; this.overlay = overlay; this.has = Boolean(message.trim());
+    this.text = TextareaState.new({ value: message });
+    this.text.set_auto_grow(8, 14);
+    this.text.on("change", (_e, cx) => { const has = Boolean(this.text.value().trim()); if (has !== this.has) { this.has = has; cx.notify(); } });
+    this.text.on("submit", (e, cx) => { if (e.secondary) this.send(cx); });
+  }
+
+  send(cx) {
+    const agent = agentOf(this.terminal), message = this.text.value().trim();
+    if (this.busy || !message) return;
+    if (!agent) { this.error = NO_AGENT; cx.notify(); return; }
+    this.busy = true; this.error = null; cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const r = await hc(sendArgs(this.terminal, message));
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || "hc send failed");
+        notify({ title: "Sent", body: `To ${agentName(agent)}`, level: "success", timeout: 2500 });
+        closeOverlay(this.overlay);
+      } catch (e) { this.error = String(e?.message ?? e); }
+      finally { this.busy = false; cx.notify(); }
+    });
+  }
+
+  render() {
+    const t = theme(), agent = agentOf(this.terminal), ready = Boolean(agent) && this.has && !this.busy;
+    return v_flex().id("send").size_full().min_h(0).p(20).gap(12).bg(t.background).text_color(t.foreground).text_size(13)
+      .child(div().text_size(16).font_semibold().child("Send to agent"))
+      .child(div().text_color(agent ? t.muted : t.ansi1).child(agent ? `To ${agentName(agent)} · nothing is sent until you press Send` : NO_AGENT))
+      .child(div().id("send-message").flex_1().min_h(0).overflow_y_scrollbar().px(12).py(10).rounded(6).border_1().border_color(t.border).cursor_text()
+        .child(Textarea.new(this.text).w_full().text_size(13).text_color(t.foreground)))
+      .child(div().text_size(12).text_color(t.ansi1).child(this.error ?? ""))
+      .child(h_flex().gap(8).items_center().justify_end()
+        .child(this.button("send-cancel", "Cancel", t, () => closeOverlay(this.overlay)))
+        .child(this.button("send-confirm", this.busy ? "Sending…" : "Send", t, (_e, cx) => this.send(cx), { primary: true, enabled: ready })));
   }
 }

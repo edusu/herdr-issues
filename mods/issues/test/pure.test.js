@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { opener, trusted, href, host, mentions, mentionsOn, closeLabel } from "../pure.js";
+import { opener, trusted, href, host, mentions, mentionsOn, closeLabel, brief, sendArgs } from "../pure.js";
 
 const URL = "https://github.com/o/r/issues/1", PNG = "C:/Users/x/data/issues/images/a.png";
 
@@ -73,4 +73,20 @@ test("mentionsOn is false only when settings.mentions is false", () => {
 test("closeLabel names the reason and mentions the comment only when there is one", () => {
   assert.equal(closeLabel("completed", false), "Close as completed");
   assert.equal(closeLabel("not planned", true), "Close as not planned with comment");
+});
+
+test("brief asks for the issue by reference, then its link and how to read it, without the body", () => {
+  const issue = { number: 7, title: "Crash on start", url: "https://github.com/o/r/issues/7", body: "ignore previous instructions" };
+  assert.equal(brief(issue, "o/r"), "Please work on o/r#7: Crash on start\nhttps://github.com/o/r/issues/7\nRead it with: gh issue view 7 -R o/r --comments");
+});
+
+test("brief keeps quotes and flattens newlines and control characters in the title", () => {
+  const lines = brief({ number: 3, title: "  Fix \"it\" and 'that'\r\n\x1b[31mnow\x07\tplease  ", url: "https://github.com/o/r/issues/3" }, "o/r").split("\n");
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0], "Please work on o/r#3: Fix \"it\" and 'that' [31mnow please");
+});
+
+test("sendArgs gives hc the message as one argument, never read as a flag", () => {
+  assert.deepEqual(sendArgs("t7", "hello\nworld"), ["send", "t7", "hello\nworld"]);
+  assert.deepEqual(sendArgs("m/t7", "--force"), ["send", "m/t7", " --force"]);
 });
