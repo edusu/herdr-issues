@@ -38,10 +38,10 @@ A side panel beside Files and Changes that lists the GitHub issues of the reposi
 ## Built from
 
 - **Layout** (`layouts/main-issues.json`): Herdr's `main` 0.1.9. The `tabs` block sits in a 42px row `tab-bar` with a 78px block `issues-button` (`{ mod: "issues", props: { button: true } }`, `window_drag`). The `panel-body` stack gets a third child `issues` (`{ mod: "issues" }`).
-- **Mod** `mods/issues/`: `main.js` is the panel, the button (props `button`), the sort menu (overlay props `sortMenu`) and the dialog (overlay props `issue: { repo, number, on, data, me }`), which `viewer.js` draws. `icons.js` writes its Lucide icons to `data/issues/icons/` and downloads avatars to `data/issues/avatars/`; `pictures.js` splits markdown around its images and downloads and measures them. The copy menu is overlay props `copyMenu: { url, ref, number, title }`.
+- **Mod** `mods/issues/`: `main.js` is the panel, the button (props `button`), the sort menu (overlay props `sortMenu`) and the dialog (overlay props `issue: { repo, number, on, data, me }`), which `viewer.js` draws. `icons.js` writes its Lucide icons to `data/issues/icons/` and downloads avatars to `data/issues/avatars/`; `pictures.js` splits markdown around its images and downloads and measures them; `pure.js` holds logic with no Herdr import (`opener`, the program that opens a link or file), tested by `test/` with `node --test`. The copy menu is overlay props `copyMenu: { url, ref, number, title }`.
 - **herdr**: `spaces`, `panes`, `focused`, `layout`, `theme`, `exec`, `hc`, `run` (`layout.select`, `layout.show`, `layout.hide`), `openOverlay`, `closeOverlay`, `props`, `shared` / `setShared` (`issues.sort`, `issues.changed`, `workspace.panels`), `appHome`, `localStorage` (repositories per folder, the `gh` login, the last repository), `fs/promises` (the cache).
 - **gpui-base**: `TextView.markdown` with `on_link_click`, `TextareaState` / `Textarea`, `InputState` / `Input`.
-- **Programs**: `gh` (`repo view`, `api user`, `issue list`, `issue view`, `issue comment`, `issue close`, `issue reopen`, `issue edit`, `label list`, `api …/timeline`), `curl` (avatars and images).
+- **Programs**: `open` (macOS), `xdg-open` (Linux) and `explorer.exe` (Windows) for links and images, `gh` (`repo view`, `api user`, `issue list`, `issue view`, `issue comment`, `issue close`, `issue reopen`, `issue edit`, `label list`, `api …/timeline`), `curl` (avatars and images).
 
 ## Watch out
 
@@ -58,6 +58,7 @@ A side panel beside Files and Changes that lists the GitHub issues of the reposi
 ## Done when
 
 - `herdr-app check ~/.config/herdr-app/mods/issues` passes.
+- Open on GitHub, a web link, a commit link and a clicked image open in the browser or the image's app on macOS, Linux and Windows.
 - The tab bar shows Files, Changes and Issues; Issues opens and closes the panel, and switching spaces restores it.
 - In a terminal inside a GitHub repository, the panel lists its open issues; Closed, Mine, the filter and each sort order change the list.
 - `echo "#12"` in that terminal puts #12 under "In this terminal" within 3 seconds.
