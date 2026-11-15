@@ -1,1 +1,7 @@
-{ "place": "none" }
+{
+  "$schema": "./mod.schema.json",
+  "version": "0.1.0",
+  "title": "Issues",
+  "place": "none",
+  "settings": { "mentions": true }
+}

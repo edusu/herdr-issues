@@ -1,9 +1,10 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, focused, exec, hc, run, layout, theme, openOverlay, closeOverlay, notify, props, appHome, shared, setShared } from "herdr";
+import { spaces, panes, focused, exec, hc, run, layout, theme, openOverlay, closeOverlay, notify, props, appHome, shared, setShared, readTextFile } from "herdr";
 import * as fs from "fs/promises";
 import { Viewer, FIELDS, copyMenu } from "./viewer.js";
 import { icons, icon } from "./icons.js";
+import { mentions, mentionsOn } from "./pure.js";
 
 // Where the focused pane is, as the Changes panel finds it. A focused mod pane
 // (this one, as a split) has no folder of its own: it keeps the last one.
@@ -19,6 +20,8 @@ const FULL = 300;                 // open issues fetched when a repo has no cach
 const CLOSED = 100;               // and the most recently closed ones
 const SYNC = 30000;               // how often the changes since the last sync are fetched
 const RESYNC = 6 * 3600 * 1000;   // a full fetch now and then catches what search misses (deleted, transferred)
+const SCAN = 10000;               // how often the focused terminal is read for issue numbers; a long read of a busy terminal took ~1.8 s
+const LINES = 100;                // lines of screen and history in that read
 const MENTIONS = 8;
 const VERSION = 2;                // a cache from another version starts with a full fetch
 const folder = () => `${appHome()}/data/issues`;
@@ -33,19 +36,6 @@ const SORTS = {
   comments: { label: "Most commented", by: (a, b) => b.comments.length - a.comments.length || b.number - a.number },
 };
 const sort = () => SORTS[shared("issues.sort")] ? shared("issues.sort") : "newest";
-
-// #123, and links to this repo's issues and pull requests: the lowest line on
-// screen (the newest) first, each line read left to right.
-function mentions(text, repo) {
-  const found = [], pattern = new RegExp(`(?:^|[^\\w&/#])#(\\d{1,5})(?![\\w-])|github\\.com/${repo.replace(/\./g, "\\.")}/(?:issues|pull)/(\\d+)`, "g");
-  for (const line of text.split("\n").reverse()) {
-    for (const m of line.matchAll(pattern)) {
-      const n = Number(m[1] ?? m[2]);
-      if (!found.includes(n)) found.push(n);
-    }
-  }
-  return found;
-}
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -105,7 +95,11 @@ export default class Issues extends View {
     cx.spawn(async (cx) => { await icons(); this.icons = true; cx.notify(); });
     this.refresh(cx);
     cx.timer.every(SYNC, (cx) => { if (!hidden()) this.refresh(cx); });
-    cx.timer.every(3000, (cx) => { if (!hidden()) this.scan(cx); });
+    // Off with mod.json's settings.mentions: false (Better Config); saving mod.json reloads the mod.
+    readTextFile(`${appHome()}/mods/issues/mod.json`).catch(() => null).then((raw) => {
+      if (!(this.mentions = mentionsOn(raw))) return;
+      cx.timer.every(SCAN, (cx) => { if (!hidden()) this.scan(cx); });
+    });
   }
 
   toolbar(t) {
@@ -240,7 +234,7 @@ export default class Issues extends View {
   // A focused mod pane has no terminal: the last one stays.
   scan(cx) {
     const terminal = (this.terminal = focused()?.terminal ?? this.terminal), repo = this.repo, store = this.stores[repo];
-    if (this.scanning || !terminal || !store) return;
+    if (!this.mentions || this.scanning || !terminal || !store) return;
     // A remote terminal (machine/t1) isn't read: reading it every few seconds, and the
     // gh lookups that follow, made typing in it lag.
     if (terminal.includes("/")) {
@@ -250,13 +244,17 @@ export default class Issues extends View {
     this.scanning = true;
     cx.spawn(async (cx) => {
       try {
-        const r = await hc(["read", terminal, "--lines", "300"]);
+        const r = await hc(["read", terminal, "--lines", String(LINES)]);
         if (r.code !== 0 || repo !== this.repo) return;
-        const numbers = mentions(r.stdout, repo).filter((n) => store.known[n] !== null);
-        for (const n of numbers.slice(0, MENTIONS)) {
-          if (n in store.known) continue;
-          const v = await exec("gh", ["issue", "view", String(n), "-R", repo, "--json", "number,title,state"], { on: this.repoOn ?? null });
-          store.known[n] = v.code === 0 ? JSON.parse(v.stdout) : null;
+        // The same text in the same terminal needs no new parse.
+        const read = JSON.stringify([repo, terminal, r.stdout]);
+        if (read !== this.read) { this.read = read; this.numbers = mentions(r.stdout, repo); }
+        const numbers = this.numbers.filter((n) => store.known[n] !== null);
+        // One lookup per scan, so a screen full of numbers doesn't run gh several times at once.
+        const next = numbers.slice(0, MENTIONS).find((n) => !(n in store.known));
+        if (next) {
+          const v = await exec("gh", ["issue", "view", String(next), "-R", repo, "--json", "number,title,state"], { on: this.repoOn ?? null });
+          store.known[next] = v.code === 0 ? JSON.parse(v.stdout) : null;
         }
         if (repo !== this.repo) return;
         const mentioned = numbers.map((n) => store.known[n]).filter(Boolean).slice(0, MENTIONS);

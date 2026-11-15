@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { opener, trusted, host } from "../pure.js";
+import { opener, trusted, host, mentions, mentionsOn } from "../pure.js";
 
 const URL = "https://github.com/o/r/issues/1", PNG = "C:/Users/x/data/issues/images/a.png";
 
@@ -33,4 +33,31 @@ test("trusted rejects look-alike hosts, other schemes, IP literals and malformed
 test("host names the host to show, or says it is unknown", () => {
   assert.equal(host("https://tracker.example.com/p.gif?x=1"), "tracker.example.com");
   assert.equal(host("https://"), "unknown host");
+});
+
+const REPO = "o/r";
+
+test("mentions finds #123, not inside words, paths or other anchors", () => {
+  assert.deepEqual(mentions("fix #12, see (#7) and #9.", REPO), [12, 7, 9]);
+  assert.deepEqual(mentions("abc#5 a/#6 &#7 ##8 #9x #10-x #123456 word #11", REPO), [11]);
+});
+
+test("mentions lists the newest line first and each line left to right", () => {
+  assert.deepEqual(mentions("#1 #2\n#3\n#4 #5", REPO), [4, 5, 3, 1, 2]);
+});
+
+test("mentions reads links to this repo's issues and pull requests only", () => {
+  const text = "https://github.com/o/r/issues/30 https://github.com/o/r/pull/31 https://github.com/o/other/issues/32 https://github.com/oXr/issues/33";
+  assert.deepEqual(mentions(text, REPO), [30, 31]);
+  assert.deepEqual(mentions("https://github.com/a.b/c/issues/4 https://github.com/aXb/c/issues/5", "a.b/c"), [4]);
+});
+
+test("mentions lists a number once and gives [] when there is none", () => {
+  assert.deepEqual(mentions("#4\nhttps://github.com/o/r/issues/4 #4", REPO), [4]);
+  assert.deepEqual(mentions("nothing here", REPO), []);
+});
+
+test("mentionsOn is false only when settings.mentions is false", () => {
+  assert.equal(mentionsOn('{"settings":{"mentions":false}}'), false);
+  for (const raw of ['{"settings":{"mentions":true}}', '{"settings":{}}', "{}", "not json", "", null]) assert.equal(mentionsOn(raw), true, String(raw));
 });

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Issues mod.json",
+  "description": "What Herdr reads from the Issues mod's mod.json, and the settings it takes.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "This file's schema, for editors."
+    },
+    "version": {
+      "type": "string",
+      "description": "The mod's version."
+    },
+    "title": {
+      "type": "string",
+      "description": "The mod's name, as Herdr shows it."
+    },
+    "place": {
+      "enum": [
+        "left",
+        "right",
+        "top",
+        "bottom",
+        "none"
+      ],
+      "description": "Where Herdr first docks the mod."
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mentions": {
+          "title": "Issues in this terminal",
+          "description": "Read the focused terminal every 10 seconds for #123 and links to the repository's issues, and list them under \"In this terminal\". Off, the terminal is never read.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}

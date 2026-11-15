@@ -20,3 +20,21 @@ export function trusted(url) {
   const u = parse(url);
   return Boolean(u) && u.protocol === "https:" && (u.hostname === "github.com" || u.hostname.endsWith(".githubusercontent.com"));
 }
+
+// #123, and links to this repo's issues and pull requests: the lowest line on
+// screen (the newest) first, each line read left to right.
+export function mentions(text, repo) {
+  const found = [], pattern = new RegExp(`(?:^|[^\\w&/#])#(\\d{1,5})(?![\\w-])|github\\.com/${repo.replace(/\./g, "\\.")}/(?:issues|pull)/(\\d+)`, "g");
+  for (const line of text.split("\n").reverse()) {
+    for (const m of line.matchAll(pattern)) {
+      const n = Number(m[1] ?? m[2]);
+      if (!found.includes(n)) found.push(n);
+    }
+  }
+  return found;
+}
+
+// Whether the terminal scan is on: mod.json's `settings.mentions`, true unless it is false.
+export function mentionsOn(raw) {
+  try { return JSON.parse(raw ?? "{}").settings?.mentions !== false; } catch { return true; }
+}
