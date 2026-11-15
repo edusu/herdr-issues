@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { opener, trusted, host, mentions, mentionsOn } from "../pure.js";
+import { opener, trusted, href, host, mentions, mentionsOn } from "../pure.js";
 
 const URL = "https://github.com/o/r/issues/1", PNG = "C:/Users/x/data/issues/images/a.png";
 
@@ -28,6 +28,14 @@ test("trusted rejects look-alike hosts, other schemes, IP literals and malformed
   for (const u of ["https://github.com.evil.test/a.png", "https://evilgithubusercontent.com/a.png", "https://githubusercontent.com/a.png", "https://evil.test/github.com", "https://github.com@evil.test/a.png", "http://github.com/a.png", "//github.com/a.png", "https://140.82.112.3/a.png", "https://[::1]/a.png", "https://127.0.0.1/a.png", "not a url", ""])
     assert.equal(trusted(u), false, u);
   assert.equal(trusted("https://evil.test@github.com/a.png"), true);
+});
+
+test("href gives curl a URL whose host matches what trusted checked", () => {
+  const raw = "https://github.com\\@evil.test/x.png";
+  assert.equal(trusted(raw), true);
+  assert.equal(href(raw), "https://github.com/@evil.test/x.png");
+  assert.equal(href("https://evil.test@github.com/x.png"), "https://evil.test@github.com/x.png");
+  assert.equal(href("not a url"), null);
 });
 
 test("host names the host to show, or says it is unknown", () => {

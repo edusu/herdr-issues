@@ -11,6 +11,10 @@ export function opener(platform, target) {
 
 const parse = (url) => { try { return new URL(url); } catch { return null; } };
 
+// The URL as WHATWG normalizes it, or null. Hand this to curl, not the raw string: curl reads
+// `https://github.com\@evil.test/` as userinfo and connects to evil.test, WHATWG as a path on github.com.
+export const href = (url) => parse(url)?.href ?? null;
+
 // The host to show for a link, or a placeholder when it doesn't parse.
 export const host = (url) => parse(url)?.hostname || "unknown host";
 

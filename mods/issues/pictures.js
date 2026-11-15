@@ -1,6 +1,6 @@
 import * as fs from "fs/promises";
 import { appHome, exec, window } from "herdr";
-import { trusted } from "./pure.js";
+import { trusted, href } from "./pure.js";
 
 // Windows has no sh on PATH; Git for Windows ships one, with sed and curl.
 const SH = () => (window()?.platform === "windows" ? "C:/Program Files/Git/bin/sh.exe" : "sh");
@@ -80,13 +80,15 @@ export function loadPicture(url) {
     const path = `data/issues/images/${hash(url)}.png`, file = `${appHome()}/${path}`;
     try {
       if (!await fs.exists(file)) {
+        const to = href(url);
+        if (!to) throw new Error("bad url");
         await fs.mkdir(`${appHome()}/data/issues/images`, { recursive: true });
         // Attachments of private repositories need the gh token. It goes only to
         // github.com, through stdin so it's never on a command line, and curl
         // drops it when GitHub redirects to its storage host.
-        const r = await exec(SH(), ["-c", /^https:\/\/github\.com\//.test(url)
+        const r = await exec(SH(), ["-c", /^https:\/\/github\.com\//.test(to)
           ? `gh auth token | sed "s/^/Authorization: token /" | ${CURL} -H @- -o "$1" "$2" || { rm -f "$1"; exit 1; }`
-          : `${CURL} -o "$1" "$2" || { rm -f "$1"; exit 1; }`, "sh", file, url]);
+          : `${CURL} -o "$1" "$2" || { rm -f "$1"; exit 1; }`, "sh", file, to]);
         if (r.code !== 0) throw new Error("download failed");
       }
       const size = dimensions(await fs.readFile(file));
