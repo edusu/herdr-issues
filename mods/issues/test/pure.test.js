@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { opener, trusted, href, host, mentions, mentionsOn } from "../pure.js";
+import { opener, trusted, href, host, mentions, mentionsOn, closeLabel } from "../pure.js";
 
 const URL = "https://github.com/o/r/issues/1", PNG = "C:/Users/x/data/issues/images/a.png";
 
@@ -68,4 +68,9 @@ test("mentions lists a number once and gives [] when there is none", () => {
 test("mentionsOn is false only when settings.mentions is false", () => {
   assert.equal(mentionsOn('{"settings":{"mentions":false}}'), false);
   for (const raw of ['{"settings":{"mentions":true}}', '{"settings":{}}', "{}", "not json", "", null]) assert.equal(mentionsOn(raw), true, String(raw));
+});
+
+test("closeLabel names the reason and mentions the comment only when there is one", () => {
+  assert.equal(closeLabel("completed", false), "Close as completed");
+  assert.equal(closeLabel("not planned", true), "Close as not planned with comment");
 });

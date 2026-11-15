@@ -42,3 +42,6 @@ export function mentions(text, repo) {
 export function mentionsOn(raw) {
   try { return JSON.parse(raw ?? "{}").settings?.mentions !== false; } catch { return true; }
 }
+
+// What the confirmation row says before an issue is closed; reason is gh's: "completed" or "not planned".
+export const closeLabel = (reason, comment) => `Close as ${reason}${comment ? " with comment" : ""}`;
