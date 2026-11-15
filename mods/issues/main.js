@@ -2,7 +2,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, focused, exec, hc, run, layout, theme, openOverlay, closeOverlay, notify, props, appHome, shared, setShared, readTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { Viewer, Sender, Starter, FIELDS, copyMenu, agentOf, agentName, sendToAgent } from "./viewer.js";
+import { Viewer, Sender, Starter, Creator, FIELDS, copyMenu, agentOf, agentName, sendToAgent, showIssue } from "./viewer.js";
 import { icons, icon } from "./icons.js";
 import { mentions, mentionsOn, worktreesRoot } from "./pure.js";
 
@@ -72,10 +72,11 @@ async function save(repo, store) {
 // { button: true }); or one issue, the sort menu or the copy menu, as an overlay of the panel.
 export default class Issues extends View {
   init(_props, cx) {
-    const { issue, overlay, sortMenu, copyMenu: copying, send, start, button } = props() ?? {};
+    const { issue, overlay, sortMenu, copyMenu: copying, send, start, create, button } = props() ?? {};
     if (issue) { this.viewer = new Viewer(issue, overlay, cx); return; }
     if (send) { this.sender = new Sender(send, overlay); return; }
     if (start) { this.starter = new Starter(start, overlay, cx); return; }
+    if (create) { this.creator = new Creator(create, overlay); return; }
     if (sortMenu) { this.menu = overlay; return; }
     if (copying) { this.copying = { ...copying, overlay }; return; }
     if (button) {
@@ -275,7 +276,14 @@ export default class Issues extends View {
   // The dialog gets the issue in full when the list has it, so it shows at once.
   open(number) {
     const data = this.issues().find((i) => i.number === number) ?? null;
-    openOverlay({ mod: "issues", kind: "dialog", width: 0.86, height: 0.9, props: { issue: { repo: this.repo, number, on: this.repoOn ?? null, data, me: this.me, terminal: this.follow() ?? null, folder: this.where().cwd ?? null, root: this.root ?? worktreesRoot(null) } } });
+    showIssue({ repo: this.repo, number, on: this.repoOn ?? null, data, ...this.dialogProps() });
+  }
+
+  // What an issue's dialog needs besides the issue itself.
+  dialogProps() { return { me: this.me, terminal: this.follow() ?? null, folder: this.where().cwd ?? null, root: this.root ?? worktreesRoot(null) }; }
+
+  create() {
+    openOverlay({ mod: "issues", kind: "dialog", modal: true, width: 640, height: 520, props: { create: { repo: this.repo, on: this.repoOn ?? null, ...this.dialogProps() } } });
   }
 
   shown() {
@@ -331,6 +339,7 @@ export default class Issues extends View {
     if (this.viewer) return this.viewer.render(cx);
     if (this.sender) return this.sender.render(cx);
     if (this.starter) return this.starter.render(cx);
+    if (this.creator) return this.creator.render(cx);
     const t = theme();
     if (this.menu) return this.sortMenu(t);
     if (this.copying) return this.copyMenu(t);
@@ -359,6 +368,9 @@ export default class Issues extends View {
         .child(div().size(14).flex_none().when(this.icons, (e) => e.child(svg(icon("issue")).size(14).text_color(t.ansi2))))
         .child(div().font_semibold().child("Issues"))
         .child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).text_right().truncate().child(this.repo ?? ""))
+        .child(h_flex().id("issues-new").h(26).px(8).gap(5).flex_none().items_center().rounded(7).border_1().border_color(t.border).text_size(12).text_color(t.muted)
+          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => this.create())
+          .child(div().size(12).when(this.icons, (e) => e.child(svg(icon("plus")).size(12)))).child("New"))
         .child(h_flex().id("issues-refresh").h(26).px(8).gap(5).flex_none().items_center().rounded(7).border_1().border_color(t.border).text_size(12).text_color(t.muted)
           .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => { this.refresh(cx); cx.notify(); })
           .child(this.syncing

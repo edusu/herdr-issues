@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { opener, trusted, href, host, mentions, mentionsOn, closeLabel, brief, sendArgs, branchName, branchError, worktreesRoot, worktreePath, asText } from "../pure.js";
+import { opener, trusted, href, host, mentions, mentionsOn, closeLabel, brief, sendArgs, branchName, branchError, worktreesRoot, worktreePath, asText, issueNumber } from "../pure.js";
 
 const URL = "https://github.com/o/r/issues/1", PNG = "C:/Users/x/data/issues/images/a.png";
 
@@ -131,4 +131,10 @@ test("worktreePath puts the checkout at <root>/<owner>-<repo>/<branch with slash
 test("asText keeps a leading dash from being read as a flag", () => {
   assert.equal(asText("-x"), " -x");
   assert.equal(asText("go"), "go");
+});
+
+test("issueNumber reads the number from the URL gh prints, on its last line", () => {
+  assert.equal(issueNumber("https://github.com/o/r/issues/57\n"), 57);
+  assert.equal(issueNumber("Creating issue in o/r\n\nhttps://github.com/o/r/issues/8\n"), 8);
+  for (const out of ["", "\n", "https://github.com/o/r/pull/3", "https://github.com/o/r/issues/x", "https://github.com/o/r/issues/5/extra", "done"]) assert.equal(issueNumber(out), null, out);
 });

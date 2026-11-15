@@ -4,7 +4,7 @@ import { exec, hc, theme, openOverlay, closeOverlay, notify, setShared, window, 
 import * as fs from "fs/promises";
 import { icons, icon, avatarPath, loadAvatar } from "./icons.js";
 import { blocks, picture, failed, loadPicture, blocked, allow } from "./pictures.js";
-import { opener, host, closeLabel, brief, sendArgs, asText, branchName, branchError, worktreePath } from "./pure.js";
+import { opener, host, closeLabel, brief, sendArgs, asText, branchName, branchError, worktreePath, issueNumber } from "./pure.js";
 
 export const FIELDS = "number,title,body,author,state,stateReason,labels,assignees,createdAt,updatedAt,comments,url";
 const DETAIL = `${FIELDS},milestone,closedByPullRequestsReferences,reactionGroups`;
@@ -39,6 +39,21 @@ function linkify(markdown, repo) {
   return markdown.split(/(```[\s\S]*?```|`[^`\n]*`)/).map((part, n) => n % 2 ? part
     : part.replace(/(^|[\s(])(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/g, (_m, pre, other, number) =>
       `${pre}[${other ?? ""}#${number}](https://github.com/${other ?? repo}/issues/${number})`)).join("");
+}
+
+// The Write and Preview tabs and the pane under them, for the comment box and the new-issue dialog.
+// `box` holds `tab`, `repo` and `link`; `state` is the textarea's.
+function writePreview(box, state, id, t) {
+  const tab = (name, label) => div().id(`${id}-tab-${name}`).h(32).px(14).flex().items_center().rounded_t(6).text_size(13).cursor_pointer()
+    .when(box.tab === name, (e) => e.bg(t.background).border_1().border_b(0).border_color(t.border).text_color(t.foreground))
+    .when(box.tab !== name, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground)))
+    .on_click((_e, cx) => { box.tab = name; cx.notify(); }).child(label);
+  return [h_flex().px(8).pt(8).gap(4).items_end().bg(t.raised).border_b(1).border_color(t.border).child(tab("write", "Write")).child(tab("preview", "Preview")),
+    box.tab === "write"
+      ? div().id(`${id}-reply`).px(12).py(10).bg(t.background).cursor_text().child(Textarea.new(state).w_full().text_size(14).text_color(t.foreground))
+      : div().px(16).py(14).min_h(110).bg(t.background).text_size(14).child(state.value().trim()
+        ? TextView.markdown(`${id}-preview`, linkify(state.value(), box.repo)).on_link_click((url, cx) => box.link(url, cx))
+        : div().text_color(t.muted).child("Nothing to preview"))];
 }
 
 // gh says app/name for apps, the REST API name[bot]; GitHub shows the name with a bot badge.
@@ -99,6 +114,7 @@ const NO_AGENT = "No agent in the focused terminal";
 
 // The overlay that previews a message and sends it to a terminal's agent on Send: `{ terminal, message }`.
 export const sendToAgent = (send) => openOverlay({ mod: "issues", kind: "dialog", modal: true, width: 560, height: 420, props: { send } });
+export const showIssue = (issue) => openOverlay({ mod: "issues", kind: "dialog", width: 0.86, height: 0.9, props: { issue } });
 const startAgent = (start) => openOverlay({ mod: "issues", kind: "dialog", modal: true, width: 560, height: 540, props: { start } });
 
 // GitHub's Copy link, with the reference and number beside it: a popup of the panel's mod. With a
@@ -365,20 +381,10 @@ export class Viewer {
 
   composer(i, t, cx) {
     const open = i.state === "OPEN", busy = Boolean(this.busy), text = Boolean(this.replying), arming = open ? this.arming : null;
-    const tab = (id, label) => div().id(`issue-tab-${id}`).h(32).px(14).flex().items_center().rounded_t(6).text_size(13).cursor_pointer()
-      .when(this.tab === id, (e) => e.bg(t.background).border_1().border_b(0).border_color(t.border).text_color(t.foreground))
-      .when(this.tab !== id, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground)))
-      .on_click((_e, cx) => { this.tab = id; cx.notify(); }).child(label);
     return v_flex().flex_none().gap(10)
       .child(div().text_size(16).font_semibold().child("Add a comment"))
       .child(v_flex().rounded(6).border_1().border_color(t.border).overflow_hidden()
-        .child(h_flex().px(8).pt(8).gap(4).items_end().bg(t.raised).border_b(1).border_color(t.border)
-          .child(tab("write", "Write")).child(tab("preview", "Preview")))
-        .child(this.tab === "write"
-          ? div().id("issue-reply").px(12).py(10).bg(t.background).cursor_text().child(Textarea.new(this.reply).w_full().text_size(14).text_color(t.foreground))
-          : div().px(16).py(14).min_h(110).bg(t.background).text_size(14).child(text
-            ? TextView.markdown("issue-preview", linkify(this.reply.value(), this.repo)).on_link_click((url, cx) => this.link(url, cx))
-            : div().text_color(t.muted).child("Nothing to preview")))
+        .children(writePreview(this, this.reply, "issue", t))
         .child(h_flex().px(12).py(10).gap(8).items_center().bg(t.background).border_t(1).border_color(t.border)
           .child(div().flex_1().text_size(12).text_color(t.muted).child(arming ? "" : "Markdown is supported · Ctrl+Enter comments"))
           .child(open && arming
@@ -532,6 +538,55 @@ export class Sender {
       .child(h_flex().gap(8).items_center().justify_end()
         .child(this.button("send-cancel", "Cancel", t, () => closeOverlay(this.overlay)))
         .child(this.button("send-confirm", this.busy ? "Sending…" : "Send", t, (_e, cx) => this.send(cx), { primary: true, enabled: ready })));
+  }
+}
+
+// A new issue: title and Markdown body (Write and Preview, as the comment box has). Props `create`:
+// { repo, on, me, terminal, folder, root }. Labels and assignees are edited afterwards, in the issue's dialog.
+export class Creator extends Sender {
+  constructor({ repo, on, ...rest }, overlay) {
+    super({ terminal: null, message: "" }, overlay);
+    this.repo = repo; this.on = on; this.rest = rest; this.tab = "write";
+    this.title = InputState.new({ placeholder: "Title" });
+    this.title.on("change", (_e, cx) => { this.error = null; cx.notify(); });
+    this.title.on("submit", (_e, cx) => this.send(cx));
+  }
+
+  link(url) { if (/^https?:\/\//i.test(url)) openUrl(url); }
+
+  // On failure the dialog stays as it is, with gh's message.
+  send(cx) {
+    const title = this.title.value().trim(), body = this.text.value().trim();
+    if (this.busy) return;
+    if (!title) { this.error = "Enter a title."; cx.notify(); return; }
+    this.busy = true; this.error = null; cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const r = await exec("gh", ["issue", "create", "-R", this.repo, "--title", title, "--body", body], { on: this.on });
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || "gh issue create failed");
+        const number = issueNumber(r.stdout);
+        closeOverlay(this.overlay);
+        if (!number) { notify({ title: "Issue created", body: this.repo, level: "success", timeout: 2500 }); return; }
+        setShared("issues.changed", { repo: this.repo, number, on: this.on, at: Date.now() });
+        showIssue({ repo: this.repo, number, on: this.on, data: null, ...this.rest });
+      } catch (e) { this.error = String(e?.message ?? e); }
+      finally { this.busy = false; cx.notify(); }
+    });
+  }
+
+  render() {
+    const t = theme(), ready = Boolean(this.title.value().trim()) && !this.busy;
+    return v_flex().id("create").size_full().min_h(0).p(20).gap(10).bg(t.background).text_color(t.foreground).text_size(13)
+      .child(div().text_size(16).font_semibold().child("New issue"))
+      .child(div().text_color(t.muted).child(this.repo))
+      .child(div().id("create-title").h(32).px(10).flex().items_center().rounded(6).border_1().border_color(t.border).cursor_text()
+        .child(Input.new(this.title).h_full().text_size(13).text_color(t.foreground)))
+      .child(div().id("create-body").flex_1().min_h(0).overflow_y_scrollbar()
+        .child(v_flex().rounded(6).border_1().border_color(t.border).overflow_hidden().children(writePreview(this, this.text, "create", t))))
+      .child(div().text_size(12).text_color(t.ansi1).child(this.error ?? ""))
+      .child(h_flex().gap(8).items_center().justify_end()
+        .child(this.button("create-cancel", "Cancel", t, () => closeOverlay(this.overlay)))
+        .child(this.button("create-confirm", this.busy ? "Creating…" : "Create", t, (_e, cx) => this.send(cx), { primary: true, enabled: ready })));
   }
 }
 

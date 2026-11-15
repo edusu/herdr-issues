@@ -91,3 +91,6 @@ export function worktreesRoot(raw) {
 // The folder of a branch's worktree, laid out as Branch PR's: <root>/<owner>-<repo>/<name>.
 export const worktreePath = (root, home, repo, branch) =>
   `${root.replace(/^~(?=\/|$)/, home).replace(/\/+$/, "")}/${repo.replace("/", "-")}/${branch.replace(/\//g, "-")}`;
+
+// The number in the URL `gh issue create` prints on its last line, or null.
+export const issueNumber = (stdout) => Number(/\/issues\/(\d+)$/.exec(stdout.trim().split("\n").at(-1).trim())?.[1]) || null;
