@@ -93,4 +93,14 @@ export const worktreePath = (root, home, repo, branch) =>
   `${root.replace(/^~(?=\/|$)/, home).replace(/\/+$/, "")}/${repo.replace("/", "-")}/${branch.replace(/\//g, "-")}`;
 
 // The number in the URL `gh issue create` prints on its last line, or null.
+// Where a layout keeps Branch PR's block: its stack, its id, and the hidden parents to show.
+export function prPanel(node, parents = []) {
+  for (const child of node?.children ?? []) {
+    if (node.type === "stack" && child.content?.mod === "branch-pr") return { stack: node.id, child: child.id, hidden: [...parents, node].filter((n) => n.hidden).map((n) => n.id) };
+    const found = prPanel(child, [...parents, node]);
+    if (found) return found;
+  }
+  return null;
+}
+
 export const issueNumber = (stdout) => Number(/\/issues\/(\d+)$/.exec(stdout.trim().split("\n").at(-1).trim())?.[1]) || null;

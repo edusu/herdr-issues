@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { opener, trusted, href, host, mentions, mentionsOn, closeLabel, brief, sendArgs, branchName, branchError, worktreesRoot, worktreePath, asText, issueNumber } from "../pure.js";
+import { opener, trusted, href, host, mentions, mentionsOn, closeLabel, brief, sendArgs, branchName, branchError, worktreesRoot, worktreePath, asText, issueNumber, prPanel } from "../pure.js";
 
 const URL = "https://github.com/o/r/issues/1", PNG = "C:/Users/x/data/issues/images/a.png";
 
@@ -137,4 +137,13 @@ test("issueNumber reads the number from the URL gh prints, on its last line", ()
   assert.equal(issueNumber("https://github.com/o/r/issues/57\n"), 57);
   assert.equal(issueNumber("Creating issue in o/r\n\nhttps://github.com/o/r/issues/8\n"), 8);
   for (const out of ["", "\n", "https://github.com/o/r/pull/3", "https://github.com/o/r/issues/x", "https://github.com/o/r/issues/5/extra", "done"]) assert.equal(issueNumber(out), null, out);
+});
+
+test("prPanel finds Branch PR's block and the hidden parents to show", () => {
+  const body = { id: "panel-body", type: "stack", active: "issues", children: [{ id: "issues", content: { mod: "issues" } }, { id: "pull-requests", content: { mod: "branch-pr" } }] };
+  const root = { type: "row", children: [{ id: "center" }, { id: "panel", type: "column", hidden: true, children: [body] }] };
+  assert.deepEqual(prPanel(root), { stack: "panel-body", child: "pull-requests", hidden: ["panel"] });
+  body.children.pop();
+  assert.equal(prPanel(root), null);
+  assert.equal(prPanel(null), null);
 });

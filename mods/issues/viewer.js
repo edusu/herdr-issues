@@ -1,15 +1,15 @@
 import { div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextView, TextareaState, Textarea, InputState, Input } from "gpui-base";
-import { exec, hc, theme, openOverlay, closeOverlay, notify, setShared, window, agents, knownAgents, home, run } from "herdr";
+import { exec, hc, theme, openOverlay, closeOverlay, notify, setShared, window, agents, knownAgents, home, run, layout } from "herdr";
 import * as fs from "fs/promises";
 import { icons, icon, avatarPath, loadAvatar } from "./icons.js";
 import { blocks, picture, failed, loadPicture, blocked, allow } from "./pictures.js";
-import { opener, host, closeLabel, brief, sendArgs, asText, branchName, branchError, worktreePath, issueNumber } from "./pure.js";
+import { opener, host, closeLabel, brief, sendArgs, asText, branchName, branchError, worktreePath, issueNumber, prPanel } from "./pure.js";
 
 export const FIELDS = "number,title,body,author,state,stateReason,labels,assignees,createdAt,updatedAt,comments,url";
 const DETAIL = `${FIELDS},milestone,closedByPullRequestsReferences,reactionGroups`;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:issues|pull)\/(\d+)(?:[/?#].*)?$/;
+const ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/(\d+)(?:[/?#].*)?$/;
 // GitHub's own state colors, the same in every theme so they read as GitHub's.
 const GITHUB = { open: "#238636", done: "#8957e5", skipped: "#6e7681", link: "#4493f8" };
 const EMOJI = {
@@ -32,6 +32,16 @@ export function ago(iso) {
 export function openUrl(url) {
   const [program, args] = opener(window()?.platform, url);
   exec(program, args).catch(() => null);
+}
+
+// Branch PR opens what shared("branch-pr.open") names once its panel shows it.
+function showBranchPR(repo, number) {
+  const at = prPanel(layout());
+  if (!at) return false;
+  for (const id of at.hidden) run("layout.show", { id });
+  run("layout.select", { stack: at.stack, child: at.child });
+  setShared("branch-pr.open", { repo, number, at: Date.now() });
+  return true;
 }
 
 // #123 and owner/repo#123 outside code become links, as on GitHub.
@@ -193,7 +203,8 @@ export class Viewer {
   // a local path or a \\server path would start a program on Windows and macOS.
   link(url, cx) {
     const m = ISSUE_URL.exec(url);
-    if (m) this.go(m[1], Number(m[2]), cx); else if (/^https?:\/\//i.test(url)) openUrl(url);
+    if (m?.[2] === "pull" && m[1].toLowerCase() === this.repo.toLowerCase() && showBranchPR(m[1], Number(m[3]))) closeOverlay(this.overlay);
+    else if (m) this.go(m[1], Number(m[3]), cx); else if (/^https?:\/\//i.test(url)) openUrl(url);
   }
 
   // Runs `gh issue <args>` on this issue, then reloads it and tells the panel.
