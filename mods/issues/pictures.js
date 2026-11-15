@@ -1,5 +1,6 @@
 import * as fs from "fs/promises";
 import { appHome, exec, window } from "herdr";
+import { trusted } from "./pure.js";
 
 // Windows has no sh on PATH; Git for Windows ships one, with sed and curl.
 const SH = () => (window()?.platform === "windows" ? "C:/Program Files/Git/bin/sh.exe" : "sh");
@@ -58,16 +59,22 @@ function dimensions(b) {
 }
 
 const pictures = {};
+// Images from other hosts load only once clicked; the choice lasts until the mod reloads.
+const allowed = new Set();
+export const allow = (url) => allowed.add(url);
+export const blocked = (url) => !trusted(url) && !allowed.has(url);
+// Only https, also across redirects. --max-filesize acts only when the server announces a size.
+const CURL = "curl -sfL --proto =https --proto-redir =https --max-filesize 10000000 --max-time 30";
 const hash = (s) => [...s].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 2166136261).toString(16);
 
 // { path (for image()), file, width, height } once downloaded; null before.
 export const picture = (url) => typeof pictures[url] === "object" ? pictures[url] : null;
 export const failed = (url) => pictures[url] === "missing";
 
-// Starts the download the first time a URL is asked for: a promise that
-// resolves once it's ready or failed.
+// Starts the download the first time a URL is asked for, unless it's blocked
+// until a click: a promise that resolves once it's ready or failed.
 export function loadPicture(url) {
-  if (pictures[url] !== undefined) return null;
+  if (pictures[url] !== undefined || blocked(url)) return null;
   pictures[url] = "loading";
   return (async () => {
     const path = `data/issues/images/${hash(url)}.png`, file = `${appHome()}/${path}`;
@@ -78,8 +85,8 @@ export function loadPicture(url) {
         // github.com, through stdin so it's never on a command line, and curl
         // drops it when GitHub redirects to its storage host.
         const r = await exec(SH(), ["-c", /^https:\/\/github\.com\//.test(url)
-          ? 'gh auth token | sed "s/^/Authorization: token /" | curl -sfL --max-time 30 -H @- -o "$1" "$2" || { rm -f "$1"; exit 1; }'
-          : 'curl -sfL --max-time 30 -o "$1" "$2" || { rm -f "$1"; exit 1; }', "sh", file, url]);
+          ? `gh auth token | sed "s/^/Authorization: token /" | ${CURL} -H @- -o "$1" "$2" || { rm -f "$1"; exit 1; }`
+          : `${CURL} -o "$1" "$2" || { rm -f "$1"; exit 1; }`, "sh", file, url]);
         if (r.code !== 0) throw new Error("download failed");
       }
       const size = dimensions(await fs.readFile(file));

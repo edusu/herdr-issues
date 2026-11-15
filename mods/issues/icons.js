@@ -1,5 +1,6 @@
 import * as fs from "fs/promises";
 import { appHome, exec } from "herdr";
+import { trusted } from "./pure.js";
 
 // Herdr draws images only from real folders, and this mod's folder may be a
 // symlink to its git checkout: icons and avatars go to its data folder instead.
@@ -53,7 +54,7 @@ export function loadAvatar(login, url) {
     const path = `${appHome()}/${file(login)}`;
     if (!await fs.exists(path)) {
       await fs.mkdir(`${appHome()}/data/issues/avatars`, { recursive: true });
-      const r = await exec("curl", ["-sfL", "--max-time", "10", "-o", path, url ?? `https://github.com/${login}.png?size=80`]).catch(() => null);
+      const r = await exec("curl", ["-sfL", "--proto", "=https", "--proto-redir", "=https", "--max-filesize", "1000000", "--max-time", "10", "-o", path, trusted(url) ? url : `https://github.com/${login}.png?size=80`]).catch(() => null);
       if (r?.code !== 0) { avatars[login] = "missing"; return false; }
     }
     avatars[login] = "ready";

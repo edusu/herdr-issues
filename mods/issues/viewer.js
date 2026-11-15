@@ -2,8 +2,8 @@ import { div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextView, TextareaState, Textarea } from "gpui-base";
 import { exec, theme, openOverlay, closeOverlay, setShared, window } from "herdr";
 import { icons, icon, avatarPath, loadAvatar } from "./icons.js";
-import { blocks, picture, failed, loadPicture } from "./pictures.js";
-import { opener } from "./pure.js";
+import { blocks, picture, failed, loadPicture, blocked, allow } from "./pictures.js";
+import { opener, host } from "./pure.js";
 
 export const FIELDS = "number,title,body,author,state,stateReason,labels,assignees,createdAt,updatedAt,comments,url";
 const DETAIL = `${FIELDS},milestone,closedByPullRequestsReferences,reactionGroups`;
@@ -278,6 +278,9 @@ export class Viewer {
 
   // As GitHub sizes one: its width attribute, else its own, never wider than the column.
   picture(key, b, t, cx) {
+    if (blocked(b.image)) return div().id(key).h(36).w_full().flex_none().rounded(6).border_1().border_color(t.border).bg(t.raised)
+      .flex().items_center().justify_center().px(12).text_size(12).text_color(t.muted).truncate().cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => { allow(b.image); cx.notify(); }).child(`Load image from ${host(b.image)}${b.alt ? ` (${b.alt})` : ""}`);
     const loading = loadPicture(b.image);
     if (loading) cx.spawn(async (cx) => { await loading; cx.notify(); });
     const p = picture(b.image);
