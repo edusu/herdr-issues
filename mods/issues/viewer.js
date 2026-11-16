@@ -4,7 +4,7 @@ import { exec, hc, theme, openOverlay, closeOverlay, notify, setShared, window, 
 import * as fs from "fs/promises";
 import { icons, icon, avatarPath, loadAvatar } from "./icons.js";
 import { blocks, picture, failed, loadPicture, blocked, allow } from "./pictures.js";
-import { opener, host, closeLabel, brief, sendArgs, asText, branchName, branchError, worktreePath, issueNumber, prPanel } from "./pure.js";
+import { opener, host, closeLabel, brief, sendArgs, asText, branchName, branchError, worktreePath, issueNumber, prPanel, TEXT, SIZE } from "./pure.js";
 
 export const FIELDS = "number,title,body,author,state,stateReason,labels,assignees,createdAt,updatedAt,comments,url";
 const DETAIL = `${FIELDS},milestone,closedByPullRequestsReferences,reactionGroups`;
@@ -54,14 +54,14 @@ function linkify(markdown, repo) {
 // The Write and Preview tabs and the pane under them, for the comment box and the new-issue dialog.
 // `box` holds `tab`, `repo` and `link`; `state` is the textarea's.
 function writePreview(box, state, id, t) {
-  const tab = (name, label) => div().id(`${id}-tab-${name}`).h(32).px(14).flex().items_center().rounded_t(6).text_size(13).cursor_pointer()
+  const tab = (name, label) => div().id(`${id}-tab-${name}`).h(SIZE.button).px(14).flex().items_center().rounded_t(6).text_size(TEXT.body).cursor_pointer()
     .when(box.tab === name, (e) => e.bg(t.background).border_1().border_b(0).border_color(t.border).text_color(t.foreground))
     .when(box.tab !== name, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground)))
     .on_click((_e, cx) => { box.tab = name; cx.notify(); }).child(label);
   return [h_flex().px(8).pt(8).gap(4).items_end().bg(t.raised).border_b(1).border_color(t.border).child(tab("write", "Write")).child(tab("preview", "Preview")),
     box.tab === "write"
-      ? div().id(`${id}-reply`).px(12).py(10).bg(t.background).cursor_text().child(Textarea.new(state).w_full().text_size(14).text_color(t.foreground))
-      : div().px(16).py(14).min_h(110).bg(t.background).text_size(14).child(state.value().trim()
+      ? div().id(`${id}-reply`).px(12).py(10).bg(t.background).cursor_text().child(Textarea.new(state).w_full().text_size(TEXT.large).text_color(t.foreground))
+      : div().px(16).py(14).min_h(110).bg(t.background).text_size(TEXT.large).child(state.value().trim()
         ? TextView.markdown(`${id}-preview`, linkify(state.value(), box.repo)).on_link_click((url, cx) => box.link(url, cx))
         : div().text_color(t.muted).child("Nothing to preview"))];
 }
@@ -132,7 +132,7 @@ const startAgent = (start) => openOverlay({ mod: "issues", kind: "dialog", modal
 export function copyMenu({ repo, number, title, url, terminal }, at) {
   url ??= `https://github.com/${repo}/issues/${number}`;
   const send = terminal === undefined ? null : { terminal, message: brief({ number, title, url }, repo) };
-  openOverlay({ mod: "issues", kind: "popup", width: 300, height: send ? 272 : 222, ...(at ? { at } : {}),
+  openOverlay({ mod: "issues", kind: "popup", width: SIZE.copyMenuWidth, height: send ? SIZE.copyMenuSendHeight : SIZE.copyMenuHeight, ...(at ? { at } : {}),
     props: { copyMenu: { url, ref: `${repo}#${number}`, number: `#${number}`, title: title ? `#${number} ${title}` : null, send } } });
 }
 
@@ -140,8 +140,8 @@ export function copyMenu({ repo, number, title, url, terminal }, at) {
 export function labelChip(l, t) {
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(l.color.slice(i, i + 2), 16));
   const light = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.35;
-  return div().h(20).px(7).flex_none().flex().items_center().rounded(10).border_1().border_color(`#${l.color}66`).bg(`#${l.color}2e`)
-    .text_size(12).font_semibold().text_color(light ? `#${l.color}` : t.foreground).child(l.name);
+  return div().h(SIZE.chip).px(7).flex_none().flex().items_center().rounded(SIZE.chip / 2).border_1().border_color(`#${l.color}66`).bg(`#${l.color}2e`)
+    .text_size(TEXT.small).font_semibold().text_color(light ? `#${l.color}` : t.foreground).child(l.name);
 }
 
 // One issue in a dialog: { repo, number, on, data?, me?, terminal, folder, root } from the panel. With
@@ -280,16 +280,16 @@ export class Viewer {
 
   button(id, label, t, onClick, { primary = false, enabled = true, glyph = null, tint = null, hint = null } = {}) {
     const solid = primary && enabled;
-    return h_flex().id(id).h(32).px(12).gap(6).flex_none().items_center().justify_center().rounded(6).text_size(13).font_medium()
+    return h_flex().id(id).h(SIZE.button).px(12).gap(6).flex_none().items_center().justify_center().rounded(6).text_size(TEXT.body).font_medium()
       .bg(solid ? GITHUB.open : t.raised).border_1().border_color(solid ? GITHUB.open : t.border).text_color(solid ? "#ffffff" : enabled ? t.foreground : t.dim)
       .when(enabled, (e) => e.cursor_pointer().hover((s) => s.bg(solid ? "#29903b" : t.hover)).on_click(onClick))
       .when(Boolean(hint), (e) => e.tooltip(hint))
-      .when(Boolean(glyph), (e) => e.child(this.glyph(glyph, 14, tint ?? (solid ? "#ffffff" : t.muted))))
+      .when(Boolean(glyph), (e) => e.child(this.glyph(glyph, SIZE.glyph, tint ?? (solid ? "#ffffff" : t.muted))))
       .when(label !== "", (e) => e.child(label));
   }
 
   badge(label, t) {
-    return div().h(20).px(7).flex_none().flex().items_center().rounded(10).border_1().border_color(t.border).text_size(12).text_color(t.muted).child(label);
+    return div().h(SIZE.chip).px(7).flex_none().flex().items_center().rounded(SIZE.chip / 2).border_1().border_color(t.border).text_size(TEXT.small).text_color(t.muted).child(label);
   }
 
   // A comment card: the avatar, who and when on its header bar, roles on the right,
@@ -297,20 +297,20 @@ export class Viewer {
   card(key, c, t, cx) {
     const author = login(this.issue.author);
     return v_flex().flex_none().rounded(6).border_1().border_color(t.border).overflow_hidden().bg(t.background)
-      .child(h_flex().h(38).px(12).gap(8).items_center().bg(t.raised).border_b(1).border_color(t.border).text_size(13)
-        .child(this.pic(c.login, c.avatar, 20, t, cx))
+      .child(h_flex().h(SIZE.cardHeader).px(12).gap(8).items_center().bg(t.raised).border_b(1).border_color(t.border).text_size(TEXT.body)
+        .child(this.pic(c.login, c.avatar, SIZE.avatar, t, cx))
         .child(div().font_semibold().text_color(t.foreground).child(shown(c.login)))
         .when(bot(c.login), (e) => e.child(this.badge("bot", t)))
         .child(div().text_color(t.muted).child(c.first ? `opened ${ago(c.at)}` : ago(c.at)))
         .child(div().flex_1())
         .when(!c.first && c.login === author, (e) => e.child(this.badge("Author", t)))
         .when(!c.first && Boolean(ROLES[c.role]), (e) => e.child(this.badge(ROLES[c.role], t))))
-      .child(div().px(16).py(14).text_size(14).child(c.body?.trim()
+      .child(div().px(16).py(14).text_size(TEXT.large).child(c.body?.trim()
         ? this.markdown(key, c.body, t, cx)
         : div().text_color(t.muted).italic().child("No description provided.")))
       .when(c.reactions?.length > 0, (e) => e.child(h_flex().px(16).pb(14).gap(6).flex_wrap()
-        .children(c.reactions.map((r) => h_flex().h(26).px(8).gap(5).items_center().rounded(13).border_1().border_color(t.border).bg(t.raised)
-          .text_size(12).text_color(t.muted).child(div().text_size(14).child(r.emoji)).child(String(r.count))))));
+        .children(c.reactions.map((r) => h_flex().h(SIZE.control).px(8).gap(5).items_center().rounded(SIZE.control / 2).border_1().border_color(t.border).bg(t.raised)
+          .text_size(TEXT.small).text_color(t.muted).child(div().text_size(TEXT.large).child(r.emoji)).child(String(r.count))))));
   }
 
   // Markdown with its images drawn in between the text.
@@ -322,14 +322,14 @@ export class Viewer {
 
   // As GitHub sizes one: its width attribute, else its own, never wider than the column.
   picture(key, b, t, cx) {
-    if (blocked(b.image)) return div().id(key).h(36).w_full().flex_none().rounded(6).border_1().border_color(t.border).bg(t.raised)
-      .flex().items_center().justify_center().px(12).text_size(12).text_color(t.muted).truncate().cursor_pointer().hover((s) => s.bg(t.hover))
+    if (blocked(b.image)) return div().id(key).h(SIZE.notice).w_full().flex_none().rounded(6).border_1().border_color(t.border).bg(t.raised)
+      .flex().items_center().justify_center().px(12).text_size(TEXT.small).text_color(t.muted).truncate().cursor_pointer().hover((s) => s.bg(t.hover))
       .on_click((_e, cx) => { allow(b.image); cx.notify(); }).child(`Load image from ${host(b.image)}${b.alt ? ` (${b.alt})` : ""}`);
     const loading = loadPicture(b.image);
     if (loading) cx.spawn(async (cx) => { await loading; cx.notify(); });
     const p = picture(b.image);
     if (!p) return div().h(failed(b.image) ? 36 : 120).w_full().flex_none().rounded(6).border_1().border_color(t.border).bg(t.raised)
-      .flex().items_center().justify_center().px(12).text_size(12).text_color(t.muted).truncate()
+      .flex().items_center().justify_center().px(12).text_size(TEXT.small).text_color(t.muted).truncate()
       .child(failed(b.image) ? `Image could not be loaded${b.alt ? `: ${b.alt}` : ""}` : "Loading image…");
     const room = Math.max(240, (this.width ?? 1100) - 380), w = Math.min(b.width ?? p.width, room), h = Math.round(p.height * w / p.width);
     return div().id(key).flex_none().cursor_pointer().on_click(() => openUrl(p.file)).child(image(p.path).w(w).h(h).rounded(6));
@@ -363,24 +363,24 @@ export class Viewer {
     const color = e.state === "OPEN" || e.state === "open" ? GITHUB.open : e.merged || e.state === "closed" ? GITHUB.done : t.muted;
     return v_flex().flex_none().gap(6)
       .child(h_flex().pl(6).gap(10).items_center()
-        .child(div().size(28).flex_none().rounded(14).flex().items_center().justify_center().bg(fill ?? t.raised).border_1().border_color(fill ?? t.border)
-          .child(this.glyph(glyph, 14, fill ? "#ffffff" : t.muted)))
-        .child(h_flex().flex_1().min_w(0).gap(5).items_center().flex_wrap().text_size(13).text_color(t.muted)
-          .child(this.pic(e.login, e.avatar, 16, t, cx)).child(strong(shown(e.login))).children(parts)
+        .child(div().size(SIZE.dot).flex_none().rounded(SIZE.dot / 2).flex().items_center().justify_center().bg(fill ?? t.raised).border_1().border_color(fill ?? t.border)
+          .child(this.glyph(glyph, SIZE.glyph, fill ? "#ffffff" : t.muted)))
+        .child(h_flex().flex_1().min_w(0).gap(5).items_center().flex_wrap().text_size(TEXT.body).text_color(t.muted)
+          .child(this.pic(e.login, e.avatar, SIZE.avatarSmall, t, cx)).child(strong(shown(e.login))).children(parts)
           .child(div().underline().child(ago(e.at)))))
-      .when(e.kind === "mention", (el) => el.child(h_flex().id(key).ml(44).gap(8).items_start().cursor_pointer().text_size(13)
+      .when(e.kind === "mention", (el) => el.child(h_flex().id(key).ml(16 + SIZE.dot).gap(8).items_start().cursor_pointer().text_size(TEXT.body)
         .on_click((_ev, cx) => this.link(e.url, cx))
-        .child(this.glyph(e.pr ? "pull" : "issue", 16, color))
+        .child(this.glyph(e.pr ? "pull" : "issue", SIZE.glyphLarge, color))
         .child(div().flex_1().min_w(0).child(h_flex().gap(6).flex_wrap()
           .child(div().font_semibold().text_color(t.foreground).hover((s) => s.text_color(GITHUB.link)).child(e.title ?? ""))
           .child(div().text_color(t.muted).child(`${e.repo === this.repo ? "" : e.repo}#${e.number}`))))))
-      .when(e.kind === "commit", (el) => el.child(h_flex().id(key).ml(44).gap(8).items_center().cursor_pointer().text_size(12)
+      .when(e.kind === "commit", (el) => el.child(h_flex().id(key).ml(16 + SIZE.dot).gap(8).items_center().cursor_pointer().text_size(TEXT.small)
         .on_click(() => openUrl(e.url))
         .child(div().px(6).py(1).rounded(5).bg(t.raised).border_1().border_color(t.border).text_color(t.muted).hover((s) => s.text_color(GITHUB.link))
           .child(e.sha.slice(0, 7)))));
   }
 
-  joint(t) { return div().flex_none().ml(19).w(2).h(16).bg(t.border); }
+  joint(t) { return div().flex_none().ml(5 + SIZE.dot / 2).w(2).h(16).bg(t.border); }
 
   thread(i, t, cx) {
     const items = this.timelines[this.id()]
@@ -393,14 +393,14 @@ export class Viewer {
   composer(i, t, cx) {
     const open = i.state === "OPEN", busy = Boolean(this.busy), text = Boolean(this.replying), arming = open ? this.arming : null;
     return v_flex().flex_none().gap(10)
-      .child(div().text_size(16).font_semibold().child("Add a comment"))
+      .child(div().text_size(TEXT.heading).font_semibold().child("Add a comment"))
       .child(v_flex().rounded(6).border_1().border_color(t.border).overflow_hidden()
         .children(writePreview(this, this.reply, "issue", t))
         .child(h_flex().px(12).py(10).gap(8).items_center().bg(t.background).border_t(1).border_color(t.border)
-          .child(div().flex_1().text_size(12).text_color(t.muted).child(arming ? "" : "Markdown is supported · Ctrl+Enter comments"))
+          .child(div().flex_1().text_size(TEXT.small).text_color(t.muted).child(arming ? "" : "Markdown is supported · Ctrl+Enter comments"))
           .child(open && arming
             ? h_flex().gap(8).items_center()
-              .child(div().text_size(13).font_semibold().child(closeLabel(arming, text)))
+              .child(div().text_size(TEXT.body).font_semibold().child(closeLabel(arming, text)))
               .child(this.button("issue-close-confirm", "Confirm", t, (_e, cx) => this.setState(true, arming, cx), { enabled: !busy, glyph: arming === "completed" ? "done" : "skipped", tint: arming === "completed" ? GITHUB.done : GITHUB.skipped }))
               .child(this.button("issue-close-cancel", "Cancel", t, (_e, cx) => { this.arming = null; cx.notify(); }))
             : open
@@ -413,29 +413,29 @@ export class Viewer {
           .children([["done", "Close as completed", "Done, closed, fixed, resolved", "completed", GITHUB.done], ["skipped", "Close as not planned", "Won't fix, can't repro, stale", "not planned", GITHUB.skipped]]
             .map(([glyph, title, note, reason, tint]) => h_flex().id(`issue-close-${reason}`).px(8).py(6).gap(10).items_start().rounded(6).cursor_pointer()
               .hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.arm(reason, cx))
-              .child(div().pt(2).child(this.glyph(glyph, 16, tint)))
-              .child(v_flex().child(div().text_size(13).font_semibold().child(title)).child(div().text_size(12).text_color(t.muted).child(note))))))));
+              .child(div().pt(2).child(this.glyph(glyph, SIZE.glyphLarge, tint)))
+              .child(v_flex().child(div().text_size(TEXT.body).font_semibold().child(title)).child(div().text_size(TEXT.small).text_color(t.muted).child(note))))))));
   }
 
   section(title, t, body, action = null) {
     return v_flex().flex_none().gap(8).py(14).border_b(1).border_color(t.border)
-      .child(h_flex().items_center().text_size(12).font_semibold().text_color(t.muted)
+      .child(h_flex().items_center().text_size(TEXT.small).font_semibold().text_color(t.muted)
         .child(div().flex_1().child(title)).when(Boolean(action), (e) => e.child(action)))
       .child(body);
   }
 
   sidebar(i, t, cx) {
     const pr = i.url.includes("/pull/"), mine = i.assignees.some((a) => a.login === this.me), all = this.labels[this.repo];
-    const none = (text) => div().text_size(12).text_color(t.muted).child(text);
-    const action = (id, label, onClick) => div().id(id).text_size(12).font_normal().text_color(GITHUB.link).cursor_pointer().hover((s) => s.underline()).on_click(onClick).child(label);
+    const none = (text) => div().text_size(TEXT.small).text_color(t.muted).child(text);
+    const action = (id, label, onClick) => div().id(id).text_size(TEXT.small).font_normal().text_color(GITHUB.link).cursor_pointer().hover((s) => s.underline()).on_click(onClick).child(label);
     // Everyone who wrote or did something here, in order of appearance, people only.
     const people = new Map();
     for (const [name, url] of [[login(i.author)], ...i.comments.map((c) => [login(c.author)]), ...(this.timelines[this.id()] ?? []).map((e) => [e.login, e.avatar])])
       if (!bot(name)) people.set(name, people.get(name) ?? url ?? null);
     const prs = i.closedByPullRequestsReferences ?? [];
-    return v_flex().id("issue-sidebar").w(264).flex_none().min_h(0).overflow_y_scrollbar().pl(8).pr(24).pt(6)
+    return v_flex().id("issue-sidebar").w(SIZE.sidebar).flex_none().min_h(0).overflow_y_scrollbar().pl(8).pr(24).pt(6)
       .child(this.section("Assignees", t, i.assignees.length
-        ? v_flex().gap(8).children(i.assignees.map((a) => h_flex().gap(8).items_center().text_size(13).font_semibold().child(this.pic(a.login, null, 20, t, cx)).child(a.login)))
+        ? v_flex().gap(8).children(i.assignees.map((a) => h_flex().gap(8).items_center().text_size(TEXT.body).font_semibold().child(this.pic(a.login, null, SIZE.avatar, t, cx)).child(a.login)))
         : h_flex().gap(4).child(none("No one ·")).when(!pr && Boolean(this.me), (e) => e.child(action("issue-assign", "Assign yourself", (_e, cx) => this.change("Assigning", ["edit", "--add-assignee", "@me"], cx)))),
         !pr && mine ? action("issue-unassign", "Unassign me", (_e, cx) => this.change("Unassigning", ["edit", "--remove-assignee", "@me"], cx)) : null))
       .child(this.section("Labels", t, this.editing
@@ -443,34 +443,34 @@ export class Viewer {
           const on = i.labels.some((x) => x.name === l.name);
           return h_flex().id(`label-${l.name}`).px(6).py(5).gap(8).items_start().rounded(6).cursor_pointer().hover((s) => s.bg(t.hover))
             .on_click((_e, cx) => this.toggleLabel(l, cx))
-            .child(div().w(14).flex_none().text_size(12).text_color(GITHUB.link).child(on ? "✓" : ""))
-            .child(div().mt(3).size(12).flex_none().rounded(6).bg(`#${l.color}`))
-            .child(v_flex().flex_1().min_w(0).child(div().text_size(13).font_semibold().child(l.name))
-              .when(Boolean(l.description), (e) => e.child(div().text_size(12).text_color(t.muted).truncate().child(l.description))));
+            .child(div().w(SIZE.check).flex_none().text_size(TEXT.small).text_color(GITHUB.link).child(on ? "✓" : ""))
+            .child(div().mt(3).size(SIZE.icon).flex_none().rounded(6).bg(`#${l.color}`))
+            .child(v_flex().flex_1().min_w(0).child(div().text_size(TEXT.body).font_semibold().child(l.name))
+              .when(Boolean(l.description), (e) => e.child(div().text_size(TEXT.small).text_color(t.muted).truncate().child(l.description))));
         })))
         : i.labels.length ? h_flex().gap(4).flex_wrap().children(i.labels.map((l) => labelChip(l, t))) : none("No labels"),
         pr ? null : action("issue-labels-edit", this.editing ? "Done" : "Edit", (_e, cx) => this.editLabels(cx))))
       .child(this.section("Milestone", t, i.milestone?.title
-        ? h_flex().gap(6).items_center().text_size(13).font_semibold().child(this.glyph("milestone", 14, t.muted)).child(i.milestone.title)
+        ? h_flex().gap(6).items_center().text_size(TEXT.body).font_semibold().child(this.glyph("milestone", SIZE.glyph, t.muted)).child(i.milestone.title)
         : none("No milestone")))
       .child(this.section("Development", t, prs.length
-        ? v_flex().gap(8).children(prs.map((p) => h_flex().id(`issue-pr-${p.number}`).gap(8).items_start().cursor_pointer().text_size(13)
+        ? v_flex().gap(8).children(prs.map((p) => h_flex().id(`issue-pr-${p.number}`).gap(8).items_start().cursor_pointer().text_size(TEXT.body)
           .on_click((_e, cx) => this.link(p.url, cx))
-          .child(div().pt(1).child(this.glyph("pull", 14, GITHUB.done)))
+          .child(div().pt(1).child(this.glyph("pull", SIZE.glyph, GITHUB.done)))
           .child(v_flex().child(div().font_semibold().hover((s) => s.text_color(GITHUB.link)).child(`#${p.number}`))
-            .child(div().text_size(12).text_color(t.muted).child(`${p.repository?.owner?.login}/${p.repository?.name}`)))))
+            .child(div().text_size(TEXT.small).text_color(t.muted).child(`${p.repository?.owner?.login}/${p.repository?.name}`)))))
         : none("No branches or pull requests")))
-      .child(this.section("Participants", t, h_flex().gap(4).flex_wrap().children([...people].slice(0, 18).map(([name, url]) => this.pic(name, url, 24, t, cx)))));
+      .child(this.section("Participants", t, h_flex().gap(4).flex_wrap().children([...people].slice(0, 18).map(([name, url]) => this.pic(name, url, SIZE.avatarLarge, t, cx)))));
   }
 
   render(cx) {
     const t = theme(), i = this.issue;
-    const bar = h_flex().h(32).gap(8).items_center()
+    const bar = h_flex().h(SIZE.button).gap(8).items_center()
       .when(this.history.length > 0, (e) => e.child(this.button("issue-back", "Back", t, (_e, cx) => this.back(cx), { glyph: "back" })))
-      .child(div().text_size(13).text_color(t.muted).child(i?.url.includes("/pull/") ? `${this.repo} · pull request` : this.repo))
-      .child(div().flex_1().min_w(0).text_size(12).text_color(t.ansi1).truncate().child(i && this.error ? this.error : ""))
-      .when(this.loading || Boolean(this.busy), (e) => e.child(h_flex().gap(6).items_center().text_size(12).text_color(t.muted)
-        .child(svg("mods/workspace-chrome/spinner.svg").size(12).text_color(t.working).spin(900)).child(this.busy ?? "Refreshing")))
+      .child(div().text_size(TEXT.body).text_color(t.muted).child(i?.url.includes("/pull/") ? `${this.repo} · pull request` : this.repo))
+      .child(div().flex_1().min_w(0).text_size(TEXT.small).text_color(t.ansi1).truncate().child(i && this.error ? this.error : ""))
+      .when(this.loading || Boolean(this.busy), (e) => e.child(h_flex().gap(6).items_center().text_size(TEXT.small).text_color(t.muted)
+        .child(svg("mods/workspace-chrome/spinner.svg").size(SIZE.icon).text_color(t.working).spin(900)).child(this.busy ?? "Refreshing")))
       .when(Boolean(i) && !this.loading && !this.busy, (e) => e.child(this.button("issue-refresh", "Refresh", t, (_e, cx) => { this.load(cx); cx.notify(); }, { glyph: "refresh" })))
       .when(Boolean(i), (e) => e.child(this.button("issue-copy", "Copy", t, () => copyMenu({ repo: this.repo, number: i.number, title: i.title, url: i.url }), { glyph: "copy" })))
       .when(Boolean(i), (e) => e.child(this.button("issue-send", "Send to agent", t, () => sendToAgent({ terminal: this.terminal, message: brief(i, this.repo) }),
@@ -480,27 +480,27 @@ export class Viewer {
         { enabled: !this.on && Boolean(this.folder), hint: this.on ? "Not available on a remote machine" : this.folder ? null : "No folder to make the worktree from" })))
       .when(Boolean(i), (e) => e.child(this.button("issue-github", "Open on GitHub", t, () => openUrl(i.url), { glyph: "external" })))
       .child(this.button("issue-close", "", t, () => closeOverlay(this.overlay), { glyph: "close" }));
-    if (!i) return v_flex().id("issue").size_full().bg(t.background).text_color(t.foreground).text_size(14).px(32).pt(16).gap(20)
+    if (!i) return v_flex().id("issue").size_full().bg(t.background).text_color(t.foreground).text_size(TEXT.large).px(32).pt(16).gap(20)
       .child(bar)
       .child(this.loading ? div().text_color(t.muted).child(`Loading #${this.number}…`) : div().text_color(t.ansi1).child(this.error ?? ""));
 
     const pr = i.url.includes("/pull/");
     const [state, color, glyph] = i.state === "OPEN" ? ["Open", GITHUB.open, "issue"] : i.state === "MERGED" ? ["Merged", GITHUB.done, "pull"]
       : i.stateReason === "NOT_PLANNED" ? ["Closed", GITHUB.skipped, "skipped"] : ["Closed", GITHUB.done, "done"];
-    return v_flex().id("issue").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(14)
+    return v_flex().id("issue").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT.large)
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(v_flex().flex_none().px(32).pt(14).pb(18).gap(14).border_b(1).border_color(t.border)
         .child(bar)
         // Word by word, so the title wraps like text with the number after its last word.
-        .child(h_flex().flex_wrap().gap_x(8).text_size(30).children(i.title.split(/\s+/).filter(Boolean).map((w) => div().child(w)))
+        .child(h_flex().flex_wrap().gap_x(8).text_size(TEXT.title).children(i.title.split(/\s+/).filter(Boolean).map((w) => div().child(w)))
           .child(div().text_color(t.muted).child(`#${i.number}`)))
         .child(h_flex().gap(8).items_center().flex_wrap()
-          .child(h_flex().h(32).px(12).gap(6).items_center().rounded(16).bg(color).text_color("#ffffff").text_size(14).font_semibold()
-            .child(this.glyph(glyph, 16, "#ffffff")).child(state))
-          .children((i.closedByPullRequestsReferences ?? []).map((p) => h_flex().id(`issue-pill-${p.number}`).h(32).px(12).gap(6).items_center().rounded(16)
-            .border_1().border_color(t.border).text_size(13).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover))
-            .on_click((_e, cx) => this.link(p.url, cx)).child(this.glyph("pull", 14, GITHUB.done)).child(`#${p.number}`)))
-          .when(pr, (e) => e.child(div().text_size(13).text_color(t.muted).child("Pull request")))))
+          .child(h_flex().h(SIZE.button).px(12).gap(6).items_center().rounded(SIZE.button / 2).bg(color).text_color("#ffffff").text_size(TEXT.large).font_semibold()
+            .child(this.glyph(glyph, SIZE.glyphLarge, "#ffffff")).child(state))
+          .children((i.closedByPullRequestsReferences ?? []).map((p) => h_flex().id(`issue-pill-${p.number}`).h(SIZE.button).px(12).gap(6).items_center().rounded(SIZE.button / 2)
+            .border_1().border_color(t.border).text_size(TEXT.body).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover))
+            .on_click((_e, cx) => this.link(p.url, cx)).child(this.glyph("pull", SIZE.glyph, GITHUB.done)).child(`#${p.number}`)))
+          .when(pr, (e) => e.child(div().text_size(TEXT.body).text_color(t.muted).child("Pull request")))))
       .child(h_flex().flex_1().min_h(0).items_start()
         .child(v_flex().id(`issue-thread-${this.id()}`).flex_1().min_w(0).h_full().overflow_y_scrollbar().pl(32).pr(24).py(20)
           .children(this.thread(i, t, cx))
@@ -540,12 +540,12 @@ export class Sender {
 
   render() {
     const t = theme(), agent = agentOf(this.terminal), ready = Boolean(agent) && this.has && !this.busy;
-    return v_flex().id("send").size_full().min_h(0).p(20).gap(12).bg(t.background).text_color(t.foreground).text_size(13)
-      .child(div().text_size(16).font_semibold().child("Send to agent"))
+    return v_flex().id("send").size_full().min_h(0).p(20).gap(12).bg(t.background).text_color(t.foreground).text_size(TEXT.body)
+      .child(div().text_size(TEXT.heading).font_semibold().child("Send to agent"))
       .child(div().text_color(agent ? t.muted : t.ansi1).child(agent ? `To ${agentName(agent)} · nothing is sent until you press Send` : NO_AGENT))
       .child(div().id("send-message").flex_1().min_h(0).overflow_y_scrollbar().px(12).py(10).rounded(6).border_1().border_color(t.border).cursor_text()
-        .child(Textarea.new(this.text).w_full().text_size(13).text_color(t.foreground)))
-      .child(div().text_size(12).text_color(t.ansi1).child(this.error ?? ""))
+        .child(Textarea.new(this.text).w_full().text_size(TEXT.body).text_color(t.foreground)))
+      .child(div().text_size(TEXT.small).text_color(t.ansi1).child(this.error ?? ""))
       .child(h_flex().gap(8).items_center().justify_end()
         .child(this.button("send-cancel", "Cancel", t, () => closeOverlay(this.overlay)))
         .child(this.button("send-confirm", this.busy ? "Sending…" : "Send", t, (_e, cx) => this.send(cx), { primary: true, enabled: ready })));
@@ -587,14 +587,14 @@ export class Creator extends Sender {
 
   render() {
     const t = theme(), ready = Boolean(this.title.value().trim()) && !this.busy;
-    return v_flex().id("create").size_full().min_h(0).p(20).gap(10).bg(t.background).text_color(t.foreground).text_size(13)
-      .child(div().text_size(16).font_semibold().child("New issue"))
+    return v_flex().id("create").size_full().min_h(0).p(20).gap(10).bg(t.background).text_color(t.foreground).text_size(TEXT.body)
+      .child(div().text_size(TEXT.heading).font_semibold().child("New issue"))
       .child(div().text_color(t.muted).child(this.repo))
-      .child(div().id("create-title").h(32).px(10).flex().items_center().rounded(6).border_1().border_color(t.border).cursor_text()
-        .child(Input.new(this.title).h_full().text_size(13).text_color(t.foreground)))
+      .child(div().id("create-title").h(SIZE.button).px(10).flex().items_center().rounded(6).border_1().border_color(t.border).cursor_text()
+        .child(Input.new(this.title).h_full().text_size(TEXT.body).text_color(t.foreground)))
       .child(div().id("create-body").flex_1().min_h(0).overflow_y_scrollbar()
         .child(v_flex().rounded(6).border_1().border_color(t.border).overflow_hidden().children(writePreview(this, this.text, "create", t))))
-      .child(div().text_size(12).text_color(t.ansi1).child(this.error ?? ""))
+      .child(div().text_size(TEXT.small).text_color(t.ansi1).child(this.error ?? ""))
       .child(h_flex().gap(8).items_center().justify_end()
         .child(this.button("create-cancel", "Cancel", t, () => closeOverlay(this.overlay)))
         .child(this.button("create-confirm", this.busy ? "Creating…" : "Create", t, (_e, cx) => this.send(cx), { primary: true, enabled: ready })));
@@ -664,21 +664,21 @@ export class Starter extends Sender {
 
   render() {
     const t = theme(), branch = this.branch.value().trim(), bad = this.path ? null : branchError(branch), agent = this.agents.some((a) => a.key === this.launch);
-    const label = (text) => div().text_size(11).font_semibold().text_color(t.dim).child(text);
-    return v_flex().id("start").size_full().min_h(0).p(20).gap(10).bg(t.background).text_color(t.foreground).text_size(13)
-      .child(div().text_size(16).font_semibold().child("Start agent"))
+    const label = (text) => div().text_size(TEXT.caption).font_semibold().text_color(t.dim).child(text);
+    return v_flex().id("start").size_full().min_h(0).p(20).gap(10).bg(t.background).text_color(t.foreground).text_size(TEXT.body)
+      .child(div().text_size(TEXT.heading).font_semibold().child("Start agent"))
       .child(div().text_color(t.muted).child(`A new branch from the default branch of ${this.repo}, in its own worktree`))
       .child(label("Branch"))
-      .child(div().id("start-branch").h(32).px(10).flex().items_center().rounded(6).border_1().border_color(bad && branch ? t.ansi1 : t.border).cursor_text()
-        .child(Input.new(this.branch).h_full().text_size(13).text_color(t.foreground)))
-      .child(div().text_size(11).text_color(bad && branch ? t.ansi1 : t.muted).truncate().child(bad && branch ? bad : this.path ?? worktreePath(this.root, home(), this.repo, branch)))
+      .child(div().id("start-branch").h(SIZE.button).px(10).flex().items_center().rounded(6).border_1().border_color(bad && branch ? t.ansi1 : t.border).cursor_text()
+        .child(Input.new(this.branch).h_full().text_size(TEXT.body).text_color(t.foreground)))
+      .child(div().text_size(TEXT.caption).text_color(bad && branch ? t.ansi1 : t.muted).truncate().child(bad && branch ? bad : this.path ?? worktreePath(this.root, home(), this.repo, branch)))
       .child(label("Open with"))
       .child(h_flex().flex_wrap().gap(6)
         .children([{ key: "terminal", name: "Terminal" }, ...this.agents].map((c) => this.button(`start-${c.key}`, c.name, t, (_e, cx) => { this.launch = c.key; cx.notify(); }, { primary: c.key === this.launch, enabled: !this.busy }))))
       .child(label(agent ? "Message for the agent" : "Message (a terminal is not sent one)"))
       .child(div().id("start-message").flex_1().min_h(0).overflow_y_scrollbar().px(12).py(10).rounded(6).border_1().border_color(t.border).cursor_text()
-        .child(Textarea.new(this.text).w_full().text_size(13).text_color(agent ? t.foreground : t.dim)))
-      .child(div().text_size(12).text_color(t.ansi1).child(this.error ?? ""))
+        .child(Textarea.new(this.text).w_full().text_size(TEXT.body).text_color(agent ? t.foreground : t.dim)))
+      .child(div().text_size(TEXT.small).text_color(t.ansi1).child(this.error ?? ""))
       .child(h_flex().gap(8).items_center().justify_end()
         .child(this.button("start-cancel", "Cancel", t, () => closeOverlay(this.overlay)))
         .child(this.button("start-confirm", this.busy ? "Starting…" : this.path ? "Open" : "Start", t, (_e, cx) => this.send(cx), { primary: true, enabled: !this.busy && !bad })));

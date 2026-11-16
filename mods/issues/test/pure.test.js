@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { opener, trusted, href, host, mentions, mentionsOn, closeLabel, brief, sendArgs, branchName, branchError, worktreesRoot, worktreePath, asText, issueNumber, prPanel } from "../pure.js";
+import { opener, trusted, href, host, mentions, mentionsOn, closeLabel, brief, sendArgs, branchName, branchError, worktreesRoot, worktreePath, asText, issueNumber, prPanel, SIZES, TEXT, SIZE, sizesOf, setSizes } from "../pure.js";
+import { readFileSync } from "node:fs";
 
 const URL = "https://github.com/o/r/issues/1", PNG = "C:/Users/x/data/issues/images/a.png";
 
@@ -146,4 +147,19 @@ test("prPanel finds Branch PR's block and the hidden parents to show", () => {
   body.children.pop();
   assert.equal(prPanel(root), null);
   assert.equal(prPanel(null), null);
+});
+
+test("sizes: the defaults keep the old values, font_size moves text and the rows holding it, scale icons and rows", () => {
+  const settings = JSON.parse(readFileSync(new globalThis.URL("../mod.schema.json", import.meta.url))).properties.settings.properties;
+  assert.deepEqual(SIZES, { scale: settings.scale.default, font_size: settings.font_size.default });
+  assert.deepEqual(sizesOf(null), SIZES);
+  assert.deepEqual(sizesOf('{"settings":{"scale":9,"font_size":"big"}}'), { scale: 1.6, font_size: 13 });
+  setSizes(SIZES);
+  assert.deepEqual([TEXT.body, TEXT.small, TEXT.title, SIZE.glyph, SIZE.button, SIZE.header], [13, 12, 30, 14, 32, 42]);
+  setSizes({ scale: 1, font_size: 16.25 });
+  assert.deepEqual([TEXT.body, TEXT.small, SIZE.glyph, SIZE.button, SIZE.header], [16.25, 15, 14, 40, 53]);
+  setSizes({ scale: 1.25, font_size: 13 });
+  assert.deepEqual([TEXT.body, TEXT.small, SIZE.glyph, SIZE.button], [13, 12, 18, 40]);
+  for (const v of Object.values(SIZE)) assert.ok(Number.isInteger(v));
+  setSizes(SIZES);
 });

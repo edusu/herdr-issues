@@ -4,7 +4,7 @@ import { spaces, panes, focused, exec, hc, run, layout, theme, openOverlay, clos
 import * as fs from "fs/promises";
 import { Viewer, Sender, Starter, Creator, FIELDS, copyMenu, agentOf, agentName, sendToAgent, showIssue } from "./viewer.js";
 import { icons, icon } from "./icons.js";
-import { mentions, mentionsOn, worktreesRoot } from "./pure.js";
+import { mentions, mentionsOn, worktreesRoot, sizesOf, setSizes, TEXT, SIZE } from "./pure.js";
 
 // Where the focused pane is, as the Changes panel finds it. A focused mod pane
 // (this one, as a split) has no folder of its own: it keeps the last one.
@@ -72,6 +72,9 @@ async function save(repo, store) {
 // { button: true }); or one issue, the sort menu or the copy menu, as an overlay of the panel.
 export default class Issues extends View {
   init(_props, cx) {
+    // Saving mod.json reloads the mod, so its settings are read once per view.
+    const raw = readTextFile(`${appHome()}/mods/issues/mod.json`).catch(() => null);
+    cx.spawn(async (cx) => { setSizes(sizesOf(await raw)); cx.notify(); });
     const { issue, overlay, sortMenu, copyMenu: copying, send, start, create, button } = props() ?? {};
     if (issue) { this.viewer = new Viewer(issue, overlay, cx); return; }
     if (send) { this.sender = new Sender(send, overlay); return; }
@@ -99,7 +102,7 @@ export default class Issues extends View {
     this.refresh(cx);
     cx.timer.every(SYNC, (cx) => { if (!hidden()) this.refresh(cx); });
     // Off with mod.json's settings.mentions: false (Better Config); saving mod.json reloads the mod.
-    readTextFile(`${appHome()}/mods/issues/mod.json`).catch(() => null).then((raw) => {
+    raw.then((raw) => {
       this.root = worktreesRoot(raw);
       if (!(this.mentions = mentionsOn(raw))) return;
       cx.timer.every(SCAN, (cx) => { if (!hidden()) this.scan(cx); });
@@ -109,14 +112,14 @@ export default class Issues extends View {
   toolbar(t) {
     const root = layout(), panel = find(root, "panel"), on = panel && !panel.hidden && find(root, "panel-body")?.active === "issues";
     return h_flex().size_full().pr(10).items_center().justify_end().bg(t.chrome).border_b(1).border_color(t.border)
-      .child(h_flex().id("panel-issues").h(26).px(8).gap(5).flex_none().items_center().rounded(6)
-        .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
+      .child(h_flex().id("panel-issues").h(SIZE.control).px(8).gap(5).flex_none().items_center().rounded(6)
+        .text_size(TEXT.small).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
         .hover((s) => s.bg(t.hover)).on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click(() => {
           if (on) run("layout.hide", { id: "panel" });
           else { run("layout.select", { stack: "panel-body", child: "issues" }); run("layout.show", { id: "panel" }); }
         })
-        .child(div().size(14).when(this.icons, (e) => e.child(svg(icon("issue")).size(14)))).child("Issues"));
+        .child(div().size(SIZE.glyph).when(this.icons, (e) => e.child(svg(icon("issue")).size(SIZE.glyph)))).child("Issues"));
   }
 
   where() { this.follow(); return (this.last = location(this.last)); }
@@ -298,41 +301,41 @@ export default class Issues extends View {
     return h_flex().id(`${where}-${i.number}`).flex_none().px(10).py(6).gap(8).items_start().rounded(7).cursor_pointer()
       .hover((s) => s.bg(t.hover)).on_click(() => this.open(i.number))
       .on_mouse_down("right", () => copyMenu({ repo: this.repo, number: i.number, title: i.title, url: i.url, terminal: this.follow() ?? null }, "pointer"))
-      .child(div().flex_none().w(40).text_color(closed ? t.ansi5 : t.dim).child(`#${i.number}`))
+      .child(div().flex_none().w(SIZE.number).text_color(closed ? t.ansi5 : t.dim).child(`#${i.number}`))
       .child(div().flex_1().min_w(0).text_color(closed && where !== "issue" ? t.muted : t.foreground).child(i.title));
   }
 
   heading(label, t) {
-    return div().flex_none().px(10).pt(8).pb(4).text_size(11).font_semibold().text_color(t.dim).child(label);
+    return div().flex_none().px(10).pt(8).pb(4).text_size(TEXT.caption).font_semibold().text_color(t.dim).child(label);
   }
 
   segment(id, label, on, t, onClick) {
-    return div().id(id).h(24).px(9).flex().items_center().rounded(6).text_size(12).cursor_pointer()
+    return div().id(id).h(SIZE.segment).px(9).flex().items_center().rounded(6).text_size(TEXT.small).cursor_pointer()
       .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted).when(on, (e) => e.font_semibold())
       .hover((s) => s.bg(on ? t.selected : t.hover)).on_click(onClick).child(label);
   }
 
   sortMenu(t) {
     const current = sort();
-    return v_flex().id("issues-sort").size_full().p(6).gap(1).bg(t.popover).text_color(t.foreground).text_size(12)
-      .child(div().px(8).pt(4).pb(6).text_size(11).font_semibold().text_color(t.dim).child("Sort by"))
-      .children(Object.entries(SORTS).map(([key, s]) => h_flex().id(`sort-${key}`).h(28).px(8).gap(8).items_center().rounded(6).cursor_pointer()
+    return v_flex().id("issues-sort").size_full().p(6).gap(1).bg(t.popover).text_color(t.foreground).text_size(TEXT.small)
+      .child(div().px(8).pt(4).pb(6).text_size(TEXT.caption).font_semibold().text_color(t.dim).child("Sort by"))
+      .children(Object.entries(SORTS).map(([key, s]) => h_flex().id(`sort-${key}`).h(SIZE.field).px(8).gap(8).items_center().rounded(6).cursor_pointer()
         .hover((e) => e.bg(t.hover)).on_click(() => { setShared("issues.sort", key); closeOverlay(this.menu); })
-        .child(div().w(14).text_color(t.accent).child(key === current ? "✓" : "")).child(s.label)));
+        .child(div().w(SIZE.check).text_color(t.accent).child(key === current ? "✓" : "")).child(s.label)));
   }
 
   copyMenu(t) {
     const { url, ref, number, title, overlay, send } = this.copying, agent = send && agentOf(send.terminal);
     const items = [["Copy link", url], ["Copy reference", ref], ["Copy number", number], ["Copy number and title", title]].filter(([, text]) => text);
-    return v_flex().id("issues-copy").size_full().p(6).gap(1).bg(t.popover).text_color(t.foreground).text_size(12)
+    return v_flex().id("issues-copy").size_full().p(6).gap(1).bg(t.popover).text_color(t.foreground).text_size(TEXT.small)
       .children(items.map(([label, text], n) => v_flex().id(`copy-${n}`).px(8).py(6).rounded(6).cursor_pointer().hover((e) => e.bg(t.hover))
         .on_click((_e, cx) => { cx.write_to_clipboard(text); notify({ title: "Copied", body: text, level: "success", timeout: 2500 }); closeOverlay(overlay); })
         .child(div().font_semibold().child(label))
-        .child(div().text_size(11).text_color(t.muted).truncate().child(text))))
+        .child(div().text_size(TEXT.caption).text_color(t.muted).truncate().child(text))))
       .when(Boolean(send), (e) => e.child(v_flex().id("copy-send").px(8).py(6).rounded(6)
         .when(Boolean(agent), (s) => s.cursor_pointer().hover((h) => h.bg(t.hover)).on_click(() => { closeOverlay(overlay); sendToAgent(send); }))
         .child(div().font_semibold().text_color(agent ? t.foreground : t.dim).child("Send to agent"))
-        .child(div().text_size(11).text_color(t.muted).truncate().child(agent ? `To ${agentName(agent)}` : "No agent in the focused terminal"))));
+        .child(div().text_size(TEXT.caption).text_color(t.muted).truncate().child(agent ? `To ${agentName(agent)}` : "No agent in the focused terminal"))));
   }
 
   render(cx) {
@@ -357,34 +360,34 @@ export default class Issues extends View {
       : this.query.trim() ? "No issues match"
       : this.mine ? `No ${this.state === "OPEN" ? "open" : "closed"} issues assigned to you`
       : `No ${this.state === "OPEN" ? "open" : "closed"} issues`);
-    const panel = v_flex().id("issues").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13);
+    const panel = v_flex().id("issues").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(TEXT.body);
     // Nothing to show until a terminal in a GitHub repo has had focus once.
     if (!this.repo) return panel.child(v_flex().flex_1().items_center().justify_center().gap(10).px(36)
-      .child(div().size(28).when(this.icons, (e) => e.child(svg(icon("issue")).size(28).text_color(t.dim))))
+      .child(div().size(SIZE.dot).when(this.icons, (e) => e.child(svg(icon("issue")).size(SIZE.dot).text_color(t.dim))))
       .child(div().font_semibold().text_color(t.muted).child(this.syncing ? "Looking for a repository…" : "No repository yet"))
-      .child(div().text_size(12).text_color(t.dim).text_center().child("Focus a terminal inside a GitHub repository and its issues show up here.")));
+      .child(div().text_size(TEXT.small).text_color(t.dim).text_center().child("Focus a terminal inside a GitHub repository and its issues show up here.")));
     return panel
-      .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().size(14).flex_none().when(this.icons, (e) => e.child(svg(icon("issue")).size(14).text_color(t.ansi2))))
+      .child(h_flex().h(SIZE.header).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
+        .child(div().size(SIZE.glyph).flex_none().when(this.icons, (e) => e.child(svg(icon("issue")).size(SIZE.glyph).text_color(t.ansi2))))
         .child(div().font_semibold().child("Issues"))
-        .child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).text_right().truncate().child(this.repo ?? ""))
-        .child(h_flex().id("issues-new").h(26).px(8).gap(5).flex_none().items_center().rounded(7).border_1().border_color(t.border).text_size(12).text_color(t.muted)
+        .child(div().flex_1().min_w(0).text_size(TEXT.caption).text_color(t.dim).text_right().truncate().child(this.repo ?? ""))
+        .child(h_flex().id("issues-new").h(SIZE.control).px(8).gap(5).flex_none().items_center().rounded(7).border_1().border_color(t.border).text_size(TEXT.small).text_color(t.muted)
           .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => this.create())
-          .child(div().size(12).when(this.icons, (e) => e.child(svg(icon("plus")).size(12)))).child("New"))
-        .child(h_flex().id("issues-refresh").h(26).px(8).gap(5).flex_none().items_center().rounded(7).border_1().border_color(t.border).text_size(12).text_color(t.muted)
+          .child(div().size(SIZE.icon).when(this.icons, (e) => e.child(svg(icon("plus")).size(SIZE.icon)))).child("New"))
+        .child(h_flex().id("issues-refresh").h(SIZE.control).px(8).gap(5).flex_none().items_center().rounded(7).border_1().border_color(t.border).text_size(TEXT.small).text_color(t.muted)
           .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => { this.refresh(cx); cx.notify(); })
           .child(this.syncing
-            ? svg("mods/workspace-chrome/spinner.svg").size(12).text_color(t.working).spin(900)
-            : div().size(12).when(this.icons, (e) => e.child(svg(icon("refresh")).size(12))))
+            ? svg("mods/workspace-chrome/spinner.svg").size(SIZE.icon).text_color(t.working).spin(900)
+            : div().size(SIZE.icon).when(this.icons, (e) => e.child(svg(icon("refresh")).size(SIZE.icon))))
           .child(this.syncing ? "Syncing" : "Refresh")))
       .child(v_flex().flex_none().p(8).gap(6).border_b(1).border_color(t.border)
         .child(h_flex().gap(6).items_center()
-          .child(div().id("issues-filter").flex_1().min_w(0).h(28).px(9).flex().items_center().rounded(7).border_1().border_color(this.typing ? t.accent : t.border).cursor_text()
-            .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
-          .child(h_flex().id("issues-sort-button").h(28).px(9).gap(4).flex_none().items_center().rounded(7).border_1().border_color(t.border).text_size(12).text_color(t.muted)
+          .child(div().id("issues-filter").flex_1().min_w(0).h(SIZE.field).px(9).flex().items_center().rounded(7).border_1().border_color(this.typing ? t.accent : t.border).cursor_text()
+            .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(TEXT.small).text_color(t.foreground)))
+          .child(h_flex().id("issues-sort-button").h(SIZE.field).px(9).gap(4).flex_none().items_center().rounded(7).border_1().border_color(t.border).text_size(TEXT.small).text_color(t.muted)
             .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
-            .on_click(() => openOverlay({ mod: "issues", kind: "popup", width: 210, height: 196, props: { sortMenu: true } }))
-            .child(SORTS[sort()].label.replace(/ updated$/, "")).child(div().text_size(9).child("▼"))))
+            .on_click(() => openOverlay({ mod: "issues", kind: "popup", width: SIZE.sortMenuWidth, height: SIZE.sortMenuHeight, props: { sortMenu: true } }))
+            .child(SORTS[sort()].label.replace(/ updated$/, "")).child(div().text_size(TEXT.tiny).child("▼"))))
         .child(h_flex().gap(6).items_center()
           .child(h_flex().flex_none().p(2).gap(2).rounded(8).border_1().border_color(t.border)
             .child(this.segment("state-open", cached ? `Open ${open >= FULL ? `${FULL}+` : open}` : "Open", this.state === "OPEN", t, (_e, cx) => { this.state = "OPEN"; cx.notify(); }))
@@ -394,11 +397,11 @@ export default class Issues extends View {
             .child(this.segment("filter-all", "All", !this.mine, t, (_e, cx) => { this.mine = false; cx.notify(); }))
             .child(this.segment("filter-mine", "Mine", this.mine, t, (_e, cx) => { this.mine = true; cx.notify(); })))))
       .child(v_flex().id("issues-list").flex_1().min_h(0).overflow_y_scrollbar().p(6).gap(1)
-        .when(Boolean(this.error) && list.length > 0, (e) => e.child(div().px(10).py(4).text_size(11).text_color(t.ansi1).child(this.error)))
+        .when(Boolean(this.error) && list.length > 0, (e) => e.child(div().px(10).py(4).text_size(TEXT.caption).text_color(t.ansi1).child(this.error)))
         .when(this.mentioned.length > 0, (e) => e.child(this.heading("In this terminal", t))
           .children(this.mentioned.map((i) => this.row(i, t, "mentioned")))
           .child(this.heading(`${this.state === "OPEN" ? "Open" : "Closed"} issues${this.mine ? " assigned to you" : ""}`, t)))
         .children(list.map((i) => this.row(i, t)))
-        .when(!list.length, (e) => e.child(div().px(16).py(28).text_size(12).text_center().text_color(this.error ? t.ansi1 : t.dim).child(empty))));
+        .when(!list.length, (e) => e.child(div().px(16).py(28).text_size(TEXT.small).text_center().text_color(this.error ? t.ansi1 : t.dim).child(empty))));
   }
 }

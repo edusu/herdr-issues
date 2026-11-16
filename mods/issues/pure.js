@@ -103,4 +103,36 @@ export function prPanel(node, parents = []) {
   return null;
 }
 
+// Text sizes at the default font_size (BODY is the panel's main text), and the sizes that grow with
+// them: ICONS follow `scale` alone; BOXES hold text, so they also grow with font_size and it always fits.
+const BODY = 13;
+const BASE_TEXT = { tiny: 9, caption: 11, small: 12, body: BODY, large: 14, heading: 16, title: 30 };
+const ICONS = { icon: 12, glyph: 14, glyphLarge: 16, avatarSmall: 16, avatar: 20, avatarLarge: 24, dot: 28 };
+const BOXES = { chip: 20, segment: 24, control: 26, field: 28, button: 32, notice: 36, cardHeader: 38, header: 42, check: 14, number: 40, sidebar: 264,
+  sortMenuWidth: 210, sortMenuHeight: 196, copyMenuWidth: 300, copyMenuHeight: 222, copyMenuSendHeight: 272 };
+export const SIZES = { scale: 1, font_size: BODY };
+const RANGES = { scale: [0.8, 1.6], font_size: [9, 24] };
+
+// What the views draw with; setSizes changes them in place, so a render reads the current ones.
+export const TEXT = { ...BASE_TEXT }, SIZE = { ...ICONS, ...BOXES };
+
+// mod.json's `settings.scale` and `settings.font_size`, kept in their ranges; a hand edit
+// that isn't a number, or an unreadable file, gives the default.
+export function sizesOf(raw) {
+  let given = {};
+  try { given = JSON.parse(raw ?? "{}").settings ?? {}; } catch { /* the defaults */ }
+  return Object.fromEntries(Object.entries(SIZES).map(([key, fallback]) => {
+    const v = given[key], [min, max] = RANGES[key];
+    return [key, typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback];
+  }));
+}
+
+// Text may be fractional; sizes are rounded to whole px.
+export function setSizes({ scale, font_size }) {
+  const text = font_size / BODY, box = Math.max(scale, text);
+  for (const k in BASE_TEXT) TEXT[k] = BASE_TEXT[k] * text;
+  for (const k in ICONS) SIZE[k] = Math.round(ICONS[k] * scale);
+  for (const k in BOXES) SIZE[k] = Math.round(BOXES[k] * box);
+}
+
 export const issueNumber = (stdout) => Number(/\/issues\/(\d+)$/.exec(stdout.trim().split("\n").at(-1).trim())?.[1]) || null;
